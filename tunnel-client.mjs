@@ -12,6 +12,15 @@
 //                                menahan koneksi), nilai ini BUKAN interval polling
 //                                utama — hanya jeda singkat sebelum poll berikutnya.
 //   TUNNEL_LOCAL_TIMEOUT_MS opsional — timeout forward ke backend lokal, default 30000.
+//   TUNNEL_MAX_IN_FLIGHT opsional — batas request yang diproses BERSAMAAN,
+//                                default 6. Poll hanya mengklaim sebanyak
+//                                slot yang kosong (lihat catatan putaran 5
+//                                di bawah: tidak ada head-of-line blocking).
+//   TUNNEL_RESPONSE_DEADLINE_MS opsional — deadline KESELURUHAN membaca
+//                                body respons backend, default 120000.
+//                                Stream yang macet di tengah jalan dipotong
+//                                saat deadline lewat (-> 502), bukan
+//                                menggantung selamanya.
 //   TUNNEL_MAX_RESPONSE_MB  opsional — batas ukuran respons backend; nilai
 //                                efektif selalu di-clamp ke kapasitas D1
 //                                (lihat D1_SAFE_RESPONSE_BYTES di bawah).
@@ -33,6 +42,17 @@
 //   backend bekerja (lease server tidak lagi balapan dengan timeout
 //   backend), dan batas respons di-clamp ke kapasitas simpan D1
 //   (2.000.000 byte/baris; respons disimpan Base64).
+// - Putaran 5: loop poll TIDAK LAGI menunggu batch selesai sebelum
+//   poll berikutnya (head-of-line blocking). Dulu satu respons
+//   streaming yang lama menyandera SEMUA request di belakangnya —
+//   terbukti di staging putaran 4: balasan LLM ke Telegram gagal
+//   karena request-nya mengantre di belakang stream lain sampai
+//   ingress menyerah (504 tunnel timeout beruntun). Sekarang
+//   handleOne di-dispatch tanpa await dan dilacak dalam Map
+//   in-flight; poll hanya mengklaim sebanyak slot kosong
+//   (TUNNEL_MAX_IN_FLIGHT). Pembacaan body respons juga punya
+//   deadline keseluruhan (TUNNEL_RESPONSE_DEADLINE_MS) agar satu
+//   stream macet tidak menggantung selamanya.
 import { readFileSync } from "node:fs";
 import { t } from "./lib/i18n.mjs";
 
@@ -52,6 +72,8 @@ const MAX_RESPONSE_BYTES = Math.min(
   D1_SAFE_RESPONSE_BYTES
 );
 const HEARTBEAT_MS = parseInt(process.env.TUNNEL_HEARTBEAT_MS || "10000", 10);
+const MAX_IN_FLIGHT = Math.max(1, parseInt(process.env.TUNNEL_MAX_IN_FLIGHT || "6", 10) || 6);
+const RESPONSE_DEADLINE_MS = parseInt(process.env.TUNNEL_RESPONSE_DEADLINE_MS || "120000", 10);
 const HEALTH_PATH = "/__tunnel-health";
 const POLL_TIMEOUT_MS = 45000;   // server menahan long-poll ~20 dtk; beri ruang jaringan
 const RESPOND_TIMEOUT_MS = 15000;
@@ -101,21 +123,38 @@ async function api(path, body, timeoutMs = RESPOND_TIMEOUT_MS) {
 
 // Baca body respons secara streaming dengan batas keras — jangan pernah
 // menampung respons tak terbatas di memori (dulu: arrayBuffer() utuh).
-async function readCapped(r) {
+// deadlineAt (putaran 5): batas waktu KESELURUHAN pembacaan. Stream
+// yang berhenti mengirim di tengah jalan dibatalkan paksa saat
+// deadline lewat dan dilempar sebagai error (pemanggil menerima 502
+// dari jalur error handleOne) — tanpa ini, satu stream macet bisa
+// menggantung walau header-nya sudah lama tiba.
+async function readCapped(r, deadlineAt) {
   if (!r.body) return Buffer.alloc(0);
   const reader = r.body.getReader();
   const chunks = [];
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > MAX_RESPONSE_BYTES) {
-      await reader.cancel().catch(() => {});
-      throw new Error(t("tunnel_response_too_large", (MAX_RESPONSE_BYTES / 1048576).toFixed(2)));
+  let deadlineHit = false;
+  const timer = setTimeout(() => {
+    deadlineHit = true;
+    reader.cancel().catch(() => {});
+  }, Math.max(1, deadlineAt - Date.now()));
+  if (typeof timer.unref === "function") timer.unref();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw new Error(t("tunnel_response_too_large", (MAX_RESPONSE_BYTES / 1048576).toFixed(2)));
+      }
+      chunks.push(Buffer.from(value));
     }
-    chunks.push(Buffer.from(value));
+  } finally {
+    clearTimeout(timer);
   }
+  if (deadlineHit)
+    throw new Error(t("tunnel_response_deadline", String(RESPONSE_DEADLINE_MS)));
   return Buffer.concat(chunks);
 }
 
@@ -178,7 +217,7 @@ async function handleOne(req) {
     };
     if (body && method !== "GET" && method !== "HEAD") init.body = Buffer.from(body, "base64");
     const r = await fetch(LOCAL + path, init);
-    const buf = await readCapped(r);
+    const buf = await readCapped(r, Date.now() + RESPONSE_DEADLINE_MS);
     const resHeaders = {};
     r.headers.forEach((v, k) => { resHeaders[k] = v; });
     await api("/__tunnel/respond", {
@@ -199,12 +238,32 @@ async function handleOne(req) {
 
 console.log("tunnel client ->", BASE, "->", LOCAL);
 let fails = 0;
+// In-flight: request yang sudah diklaim tapi belum selesai diproses.
+// Loop poll TIDAK menunggu mereka (putaran 5 — head-of-line blocking):
+// handleOne di-dispatch tanpa await, dan poll berikutnya hanya
+// mengklaim sebanyak slot kosong. Satu respons streaming yang lama
+// dengan demikian tidak lagi menyandera request di belakangnya.
+const inFlight = new Map();
 for (;;) {
   try {
-    const { requests } = await api("/__tunnel/poll", { limit: 6 }, POLL_TIMEOUT_MS);
+    const free = MAX_IN_FLIGHT - inFlight.size;
+    if (free <= 0) {
+      // Semua slot penuh: tunggu yang paling cepat selesai, lalu klaim lagi.
+      await Promise.race(inFlight.values());
+      continue;
+    }
+    const { requests } = await api("/__tunnel/poll", { limit: free }, POLL_TIMEOUT_MS);
     fails = 0;
     if (requests && requests.length) {
-      await Promise.all(requests.map(handleOne));
+      for (const req of requests) {
+        const p = handleOne(req)
+          .catch(() => {})
+          .finally(() => inFlight.delete(req.id));
+        inFlight.set(req.id, p);
+      }
+      // Sengaja TIDAK tidur & TIDAK menunggu batch: langsung poll lagi
+      // selama masih ada slot, agar request berikutnya segera diklaim
+      // walau batch ini belum selesai.
     } else {
       await new Promise((r) => setTimeout(r, POLL_MS));
     }

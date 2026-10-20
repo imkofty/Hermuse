@@ -36,16 +36,26 @@ export class FakeD1 {
     return new FakeStatement(this.db, sql);
   }
   async batch(statements) {
-    const out = [];
-    this.db.exec("BEGIN");
+    // D1 asli men-serialkan batch yang datang bersamaan; tiru dengan
+    // antrean janji agar BEGIN/COMMIT tidak bertumpuk di koneksi tunggal.
+    const prev = this._batchQueue || Promise.resolve();
+    let release;
+    this._batchQueue = new Promise((r) => (release = r));
+    await prev;
     try {
-      for (const s of statements) out.push(await s.run());
-      this.db.exec("COMMIT");
-    } catch (e) {
-      this.db.exec("ROLLBACK");
-      throw e;
+      const out = [];
+      this.db.exec("BEGIN");
+      try {
+        for (const s of statements) out.push(await s.run());
+        this.db.exec("COMMIT");
+      } catch (e) {
+        this.db.exec("ROLLBACK");
+        throw e;
+      }
+      return out;
+    } finally {
+      release();
     }
-    return out;
   }
   // Akses mentah untuk setup/assert di test.
   raw(sql, ...params) {

@@ -14,11 +14,16 @@ CREATE TABLE IF NOT EXISTS tunnel_requests (
   status     TEXT,
   created_at INTEGER,
   claim_token TEXT,
-  claimed_at  INTEGER
+  claimed_at  INTEGER,
+  idempotency_key TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_tunnel_requests_status
   ON tunnel_requests(status, created_at);
+
+-- Idempotency: satu key = maksimal satu request dalam antrean.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tunnel_requests_idem
+  ON tunnel_requests(idempotency_key) WHERE idempotency_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tunnel_responses (
   id          TEXT PRIMARY KEY,
@@ -26,4 +31,12 @@ CREATE TABLE IF NOT EXISTS tunnel_responses (
   headers     TEXT,
   body        TEXT,
   created_at  INTEGER
+);
+
+-- Rate limit ingress publik: jendela tetap 60 detik per IP.
+CREATE TABLE IF NOT EXISTS tunnel_rate_limits (
+  ip           TEXT,
+  window_start INTEGER,
+  count        INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (ip, window_start)
 );

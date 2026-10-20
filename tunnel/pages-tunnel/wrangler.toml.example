@@ -12,3 +12,17 @@ pages_build_output_dir = "."
 binding = "DB"
 database_name = "tunnel-9router"
 database_id = "ISI_UUID_D1_KAMU_DI_SINI"
+
+# Variabel & secret Pages (set lewat dashboard Cloudflare atau
+# `wrangler pages secret put <NAMA>` — JANGAN tulis nilainya di file ini):
+#   TUNNEL_KEY        (secret, WAJIB) kunci bersama client lokal;
+#                     tanpa ini poll/respond menolak semua request.
+#   GATE_PASSWORD     (secret, opsional) password HTTP Basic untuk semua
+#                     halaman non-API (dashboard). User: GATE_USER
+#                     (default "hermuse").
+#   REQUIRE_GATE      (var, opsional) "1" = dashboard WAJIB ter-gate;
+#                     tanpa GATE_PASSWORD, ingress menjawab 500.
+#   RATE_LIMIT_PER_MIN (var, opsional) batas request per IP per menit
+#                     di ingress (default 120; "0" = nonaktif).
+#   INGRESS_WAIT_MS   (var, opsional) masa tunggu respons di ingress
+#                     (default 40000; lease klaim poll 30000).

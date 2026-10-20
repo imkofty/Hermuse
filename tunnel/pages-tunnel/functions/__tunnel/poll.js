@@ -16,7 +16,12 @@
 // - Lease: klaim membawa claim_token + claimed_at. Klaim yang lebih tua
 //   dari LEASE_MS (client mati sebelum respond) direbut kembali ke
 //   'pending' agar request-nya tidak hilang selamanya.
-const LEASE_MS = 45000;
+// - LEASE_MS (30 dtk) SENGAJA lebih pendek dari masa tunggu ingress
+//   (40 dtk, [[path]].js): request yang client-nya mati di tengah jalan
+//   masih sempat direbut & dijawab poller lain sebelum pemanggil
+//   menyerah — dan hasil yang tetap terlambat bisa diambil pemanggil
+//   lewat GET /__tunnel/result?id=<id>.
+const LEASE_MS = 30000;
 
 export async function onRequestPost({ request, env }) {
   const { key, limit } = await request.json().catch(() => ({}));
@@ -31,6 +36,7 @@ export async function onRequestPost({ request, env }) {
       "UPDATE tunnel_requests SET status='pending', claim_token=NULL, claimed_at=NULL " +
       "WHERE status='claimed' AND claimed_at < ?"
     ).bind(now - LEASE_MS),
+    env.DB.prepare("DELETE FROM tunnel_rate_limits WHERE window_start < ?").bind(now - 3600000),
   ]);
 
   const n = Math.min(Math.max(parseInt(limit) || 4, 1), 8);

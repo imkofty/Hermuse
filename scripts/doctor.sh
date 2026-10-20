@@ -166,12 +166,36 @@ if [ -z "$turl" ]; then
 fi
 if [ -z "$turl" ]; then
   emit SKIP "tunnel URL not configured (no .tunnel-url, no TUNNEL_BASE_URL)"
+elif [ -f "$REPO_DIR/.health-key" ]; then
+  # Probe terautentikasi (putaran 3): satu-satunya cek yang membuktikan
+  # jalur tunnel benar-benar meneruskan — nonce harus kembali dari
+  # client lokal dan backend harus ok. Selaras dengan watchdog.sh.
+  hkey=$(tr -d '[:space:]' < "$REPO_DIR/.health-key")
+  nonce="doctor-$(date +%s)-$$"
+  pbody=$(curl -s -m 50 -H "x-tunnel-health-key: $hkey" -H "x-health-nonce: $nonce" "${turl%/}/__tunnel-health" 2>/dev/null || true)
+  case "$pbody" in
+    *"$nonce"*)
+      case "$pbody" in
+        *'"backend_ok":true'*|*'"backend_ok": true'*)
+          emit ok "tunnel health probe passed (client + backend, nonce verified)" ;;
+        *)
+          emit FAIL "tunnel health probe: client answered but backend is down → fix: bash restart-9router.sh" ;;
+      esac
+      ;;
+    *)
+      emit FAIL "tunnel health probe failed (client not answering through the tunnel) → fix: bash restart-tunnel.sh" ;;
+  esac
 else
   code=$(http_code "$turl")
   if [ "$code" = "000" ] || [ -z "$code" ]; then
     emit warn "cannot reach $turl: network issue or wrong URL?"
   elif [ "$code" = "200" ]; then
     emit ok "tunnel URL reachable (HTTP 200)"
+  elif [ "$code" = "401" ] || [ "$code" = "403" ]; then
+    # Gate/edge menjawab BUKAN bukti tunnel meneruskan request (ingress
+    # bisa menolak sebelum antrean). Tanpa .health-key, doctor tidak
+    # bisa memverifikasi jalur forwarding — laporkan apa adanya.
+    emit warn "tunnel URL answered HTTP $code (gated) — forwarding NOT verified; add .health-key (scripts/setup-tunnel.sh) for the real probe"
   elif [ "$code" = "502" ] || [ "$code" = "503" ] || [ "$code" = "504" ]; then
     # Tunnel infra answered but the forward leg failed (tunnel-client
     # responds 502 when 9Router is down). Pick the single fix command

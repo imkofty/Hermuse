@@ -38,21 +38,43 @@ if ! pgrep -f "tunnel-client[.]mjs" > /dev/null 2>&1; then
   TUNNEL_RESTARTED=1
 fi
 
-# 2b. Cek ujung-ke-ujung lewat URL publik (bila .tunnel-url tersedia):
-# proses client bisa HIDUP tapi macet — hanya jalur publik yang
-# membuktikan tunnel benar-benar meneruskan request. 401/403 = sehat
-# (gate/auth di ujung sana menjawab = tunnel bekerja). Kode 000/5xx
-# dengan client yang baru saja di-restart dilewati (beri waktu bangun).
-if [ "$TUNNEL_RESTARTED" -eq 0 ] && [ -f "$D/.tunnel-url" ]; then
+# 2b. Probe kesehatan UJUNG-KE-UJUNG terautentikasi (bila .tunnel-url
+# DAN .health-key tersedia): proses client bisa HIDUP tapi macet — hanya
+# request yang benar-benar melewati antrean tunnel yang membuktikannya.
+# Probe mengirim GET /__tunnel-health dengan kunci kesehatan + nonce
+# acak; yang menjawab adalah tunnel client itu sendiri (setelah mengecek
+# backend lokal), membawa nonce yang sama + status backend.
+#   - nonce cocok + backend_ok:true  -> sehat, tidak ada restart.
+#   - nonce cocok + backend_ok:false -> tunnel hidup, backend sakit:
+#     restart 9Router saja.
+#   - selain itu (timeout/504/badan kosong/nonce beda) -> client macet
+#     atau mati di tengah: restart tunnel.
+# Kode 401/403 dari edge TIDAK lagi dianggap sehat (perbaikan putaran 3):
+# dengan gate aktif, ingress menjawab 401 SEBELUM request masuk antrean,
+# jadi 401 hanya membuktikan edge hidup — bukan tunnel. Tanpa
+# .health-key (instalasi lama) probe dilewati; buat file-nya dengan
+# scripts/setup-tunnel.sh atau manual (lihat README, bagian upgrade).
+# Probe dilewati juga bila client baru saja di-restart (beri waktu bangun).
+if [ "$TUNNEL_RESTARTED" -eq 0 ] && [ -f "$D/.tunnel-url" ] && [ -f "$D/.health-key" ]; then
   TURL="$(tr -d '[:space:]' < "$D/.tunnel-url")"
   TURL="${TURL%/}"
-  if [ -n "$TURL" ]; then
-    PCODE="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$TURL/dashboard" 2>/dev/null || echo 000)"
-    case "$PCODE" in
-      200|301|302|303|307|308|401|403) : ;;  # sehat / ter-gate = tunnel meneruskan
+  HKEY="$(tr -d '[:space:]' < "$D/.health-key")"
+  if [ -n "$TURL" ] && [ -n "$HKEY" ]; then
+    NONCE="wd-$(date +%s)-$$-${RANDOM:-0}"
+    PBODY="$(curl -s -m 50 -H "x-tunnel-health-key: $HKEY" -H "x-health-nonce: $NONCE" "$TURL/__tunnel-health" 2>/dev/null)"
+    case "$PBODY" in
+      *"$NONCE"*)
+        case "$PBODY" in
+          *'"backend_ok":true'*|*'"backend_ok": true'*) : ;;  # sehat penuh
+          *)
+            bash "$D/restart-9router.sh" > /dev/null 2>&1
+            RESTARTED="$RESTARTED 9router-backend"
+            ;;
+        esac
+        ;;
       *)
         bash "$D/restart-tunnel.sh" > /dev/null 2>&1
-        RESTARTED="$RESTARTED tunnel-public"
+        RESTARTED="$RESTARTED tunnel-probe"
         ;;
     esac
   fi

@@ -6,8 +6,12 @@
 #   2. 9Router HTTP 500   -> restart-9router dipanggil + tercatat di log.
 #   3. Proses tunnel mati -> restart-tunnel dipanggil.
 #   4. Gateway mati       -> start-gateway dipanggil.
-#   5. URL publik 502 (proses client hidup tapi macet) -> restart-tunnel.
+#   5. Probe kesehatan gagal (proses client hidup tapi macet) -> restart-tunnel.
 #   6. Kunci run dipegang proses lain -> watchdog keluar tanpa restart.
+#   7. Probe sehat (nonce cocok + backend_ok) -> tidak ada restart.
+#   8. Probe menjawab tapi backend mati -> restart-9router, BUKAN tunnel.
+#   9. Edge menjawab 401 (gate) tapi probe tak terjawab -> restart-tunnel
+#      (regresi putaran 3: 401 dari edge BUKAN bukti tunnel sehat).
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
@@ -24,11 +28,30 @@ for s in restart-9router.sh restart-tunnel.sh start-gateway.sh; do
 done
 cp "$ROOT/watchdog.sh" "$APP/watchdog.sh"
 
-# --- Shim curl: kode status tergantung URL & env ---
+# --- Shim curl: perilaku tergantung URL & env ---
+# URL __tunnel-health -> badan probe sesuai MOCK_HEALTH (nonce diambil
+# dari header -H yang dikirim watchdog, seperti client sungguhan).
+# URL lain -> kode status seperti sebelumnya.
 cat > "$BIN/curl" <<'EOF'
 #!/bin/bash
+nonce=""
+prev=""
 for a in "$@"; do
+  if [ "$prev" = "-H" ]; then
+    case "$a" in
+      x-health-nonce:*) nonce="${a#x-health-nonce: }"; nonce="${nonce#x-health-nonce:}" ;;
+    esac
+  fi
+  prev="$a"
   case "$a" in
+    *__tunnel-health*)
+      case "${MOCK_HEALTH:-ok}" in
+        ok) printf '{"ok":true,"nonce":"%s","backend_ok":true,"backend_status":200}' "$nonce"; exit 0 ;;
+        backend-down) printf '{"ok":true,"nonce":"%s","backend_ok":false,"backend_status":0}' "$nonce"; exit 0 ;;
+        gate401) printf 'authentication required'; exit 0 ;;
+        *) printf 'tunnel timeout (client offline?)'; exit 0 ;;
+      esac
+      ;;
     *127.0.0.1:20128*) echo "${MOCK_LOCAL_CODE:-200}"; exit 0 ;;
     http*) echo "${MOCK_PUBLIC_CODE:-200}"; exit 0 ;;
   esac
@@ -79,11 +102,24 @@ expect_calls "tunnel mati" "restart-tunnel.sh"
 MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=alive MOCK_GW_PROC=dead run_watchdog
 expect_calls "gateway mati" "start-gateway.sh"
 
-# 5. URL publik 502 padahal proses client hidup
+# 5. Probe gagal padahal proses client hidup (client macet)
 echo "https://tunnel.example" > "$APP/.tunnel-url"
-MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=alive MOCK_GW_PROC=alive MOCK_PUBLIC_CODE=502 run_watchdog
-expect_calls "publik 502" "restart-tunnel.sh"
-rm -f "$APP/.tunnel-url"
+echo "health-secret" > "$APP/.health-key"
+MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=alive MOCK_GW_PROC=alive MOCK_HEALTH=stuck run_watchdog
+expect_calls "probe macet" "restart-tunnel.sh"
+
+# 7. Probe sehat penuh -> diam
+MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=alive MOCK_GW_PROC=alive MOCK_HEALTH=ok run_watchdog
+expect_calls "probe sehat" ""
+
+# 8. Probe menjawab, backend mati -> restart 9Router saja
+MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=alive MOCK_GW_PROC=alive MOCK_HEALTH=backend-down run_watchdog
+expect_calls "probe backend mati" "restart-9router.sh"
+
+# 9. Edge menjawab 401 (gate aktif) tapi probe tak sampai client -> restart tunnel
+MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=alive MOCK_GW_PROC=alive MOCK_HEALTH=gate401 run_watchdog
+expect_calls "gate 401 bukan sehat" "restart-tunnel.sh"
+rm -f "$APP/.tunnel-url" "$APP/.health-key"
 
 # 6. Kunci dipegang proses lain -> keluar cepat, nol restart
 ( flock "$APP/.watchdog.lock" sleep 5 ) &

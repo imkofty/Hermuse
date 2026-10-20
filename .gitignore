@@ -7,6 +7,8 @@
 .tunnel-key
 .tunnel-key*
 .tunnel-url
+.health-key
+.gate-pw
 .dashboard-pw
 wrangler.toml
 tunnel/pages-tunnel/wrangler.toml   # hasil generate (berisi D1 id asli); pakai wrangler.toml.example

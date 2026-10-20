@@ -13,6 +13,13 @@ cd "$SCRIPT_DIR"
 DASHBOARD_PW_FILE="${DASHBOARD_PW_FILE:-$SCRIPT_DIR/.dashboard-pw}"
 if [ -f "$DASHBOARD_PW_FILE" ]; then
   export INITIAL_PASSWORD="$(cat "$DASHBOARD_PW_FILE")"
+elif [ -f "$SCRIPT_DIR/.tunnel-url" ]; then
+  # Fail-closed (audit putaran 3): .tunnel-url berarti dashboard akan
+  # terekspos publik lewat tunnel. Password default di setup publik
+  # BUKAN pilihan — dulu script hanya memperingatkan lalu tetap jalan.
+  # Pemakaian lokal murni (tanpa .tunnel-url) tetap cukup peringatan.
+  echo "$(t router_pw_required_public "$DASHBOARD_PW_FILE")" >&2
+  exit 1
 else
   echo "$(t router_pw_warn "$DASHBOARD_PW_FILE")" >&2
 fi

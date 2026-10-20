@@ -18,6 +18,11 @@
 //   statement yang sama: pemetaan key -> hasil tetap hidup setelah baris
 //   request dihapus saat pengiriman, jadi kiriman ulang dengan key yang
 //   sama tidak mengulang efek samping (putaran 3; migrasi 003).
+// - Putaran 4 (migrasi 004): principal + fingerprint request ikut
+//   disalin dalam statement INSERT ... SELECT yang sama, sehingga
+//   lookup replay di ingress bisa menuntut key + principal +
+//   fingerprint semuanya cocok — respons tidak lagi bisa bocor ke
+//   pemanggil lain yang memakai key yang sama.
 const MAX_BODY_B64_CHARS = 1800000;
 const MAX_HEADERS_BYTES = 32768;
 
@@ -30,13 +35,14 @@ export async function onRequestPost({ request, env }) {
   if ((body && body.length > MAX_BODY_B64_CHARS) || headersJson.length > MAX_HEADERS_BYTES)
     return new Response("response payload exceeds D1 storage limit", { status: 413 });
 
+  // Satu statement: baris respons hanya tertulis bila baris request
+  // masih ter-klaim oleh token ini pada saat statement berjalan, dan
+  // key+principal+fingerprint disalin dari baris request yang sama.
   const res = await env.DB.prepare(
-    "INSERT OR REPLACE INTO tunnel_responses (id, status_code, headers, body, created_at, idempotency_key) " +
-    "SELECT ?,?,?,?,?, (" +
-    "  SELECT idempotency_key FROM tunnel_requests WHERE id=? AND status='claimed' AND claim_token=?) " +
-    "WHERE EXISTS (" +
-    "  SELECT 1 FROM tunnel_requests WHERE id=? AND status='claimed' AND claim_token=?)"
-  ).bind(id, status_code | 0, headersJson, body || null, Date.now(), id, claim_token, id, claim_token).run();
+    "INSERT OR REPLACE INTO tunnel_responses (id, status_code, headers, body, created_at, idempotency_key, idem_principal, idem_fingerprint) " +
+    "SELECT ?,?,?,?,?, idempotency_key, idem_principal, idem_fingerprint " +
+    "FROM tunnel_requests WHERE id=? AND status='claimed' AND claim_token=?"
+  ).bind(id, status_code | 0, headersJson, body || null, Date.now(), id, claim_token).run();
 
   if (!res.meta || res.meta.changes !== 1)
     return new Response("request not claimed by this client", { status: 409 });

@@ -438,6 +438,145 @@ test("health probe: tanpa/salah health-key -> 403; key benar -> request masuk an
   assert.equal(closed.status, 403);
 });
 
+// --- Putaran 4 (audit lanjutan 2026-10-20): idempotency terikat pemanggil ---
+
+// Selesaikan satu request yang sedang antre: klaim via poll lalu respond.
+async function completeNext(env, bodyText) {
+  const { requests } = await (await poll.onRequestPost({ request: postReq({ key: KEY, limit: 1 }), env })).json();
+  assert.equal(requests.length, 1);
+  const rr = await respond.onRequestPost({
+    request: postReq({
+      key: KEY, id: requests[0].id, claim_token: requests[0].claim_token,
+      status_code: 200, headers: {}, body: Buffer.from(bodyText).toString("base64"),
+    }), env,
+  });
+  assert.equal(rr.status, 200);
+  return requests[0];
+}
+
+const idemReq = (auth, key, payload) => new Request("https://tunnel.example/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    "content-type": "application/json",
+    "idempotency-key": key,
+    ...(auth ? { authorization: auth } : {}),
+  },
+  body: JSON.stringify(payload),
+});
+
+test("putaran 4 (a): replay pemanggil sama + request sama dilayani dari respons, backend tidak kena lagi", async () => {
+  const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  const auth = "Bearer kunci-pemanggil-A";
+  const p1 = ingress.onRequest({ request: idemReq(auth, "key-r4", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  await completeNext(env, "jawaban-A");
+  const r1 = await p1;
+  assert.equal(r1.status, 200);
+  assert.equal(await r1.text(), "jawaban-A");
+  // Yang tersimpan adalah HASH principal — kredensial mentah tidak bocor ke DB.
+  const stored = env.DB.raw("SELECT idem_principal, idem_fingerprint FROM tunnel_responses")[0];
+  assert.ok(stored.idem_principal.startsWith("auth:"));
+  assert.ok(!stored.idem_principal.includes("kunci-pemanggil-A"));
+  assert.ok(stored.idem_fingerprint.includes("/v1/chat/completions"));
+  // Retry identik: replay langsung, TIDAK ada request baru.
+  const r2 = await ingress.onRequest({ request: idemReq(auth, "key-r4", { model: "x" }), env });
+  assert.equal(r2.status, 200);
+  assert.equal(await r2.text(), "jawaban-A");
+  assert.equal(Number(env.DB.raw("SELECT COUNT(*) AS n FROM tunnel_requests")[0].n), 0);
+});
+
+test("putaran 4 (b): key sama, principal beda SETELAH pengiriman -> TIDAK replay, diproses baru", async () => {
+  const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  const pA = ingress.onRequest({ request: idemReq("Bearer kunci-A", "key-sama", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  await completeNext(env, "jawaban-A");
+  assert.equal(await (await pA).text(), "jawaban-A");
+  // Pemanggil B memakai key yang sama: TIDAK boleh menerima respons A.
+  const pB = ingress.onRequest({ request: idemReq("Bearer kunci-B", "key-sama", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(Number(env.DB.raw("SELECT COUNT(*) AS n FROM tunnel_requests")[0].n), 1);
+  await completeNext(env, "jawaban-B");
+  const rB = await pB;
+  assert.equal(rB.status, 200);
+  assert.equal(await rB.text(), "jawaban-B");
+});
+
+test("putaran 4 (b2): key sama, principal beda SEDANG antre -> dua request terpisah", async () => {
+  const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  const pA = ingress.onRequest({ request: idemReq("Bearer kunci-A", "key-antre", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  const pB = ingress.onRequest({ request: idemReq("Bearer kunci-B", "key-antre", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  // B tidak menempel ke request A: dua baris antrean berbeda principal.
+  const rows = env.DB.raw("SELECT idem_principal FROM tunnel_requests");
+  assert.equal(rows.length, 2);
+  assert.equal(new Set(rows.map((r) => r.idem_principal)).size, 2);
+  const { requests } = await (await poll.onRequestPost({ request: postReq({ key: KEY, limit: 4 }), env })).json();
+  assert.equal(requests.length, 2);
+  for (const q of requests) {
+    await respond.onRequestPost({
+      request: postReq({
+        key: KEY, id: q.id, claim_token: q.claim_token, status_code: 200,
+        headers: {}, body: Buffer.from("ok").toString("base64"),
+      }), env,
+    });
+  }
+  assert.equal((await pA).status, 200);
+  assert.equal((await pB).status, 200);
+});
+
+test("putaran 4 (c): key+principal sama, body beda -> 409 (saat antre & setelah pengiriman)", async () => {
+  const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  const auth = "Bearer kunci-A";
+  const p1 = ingress.onRequest({ request: idemReq(auth, "key-konflik", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  // Masih antre, key+principal sama tapi payload beda -> 409 langsung.
+  const inflight = await ingress.onRequest({ request: idemReq(auth, "key-konflik", { model: "LAIN" }), env });
+  assert.equal(inflight.status, 409);
+  assert.match(await inflight.text(), /idempotency key conflict/);
+  await completeNext(env, "jawaban-1");
+  assert.equal((await p1).status, 200);
+  // Setelah pengiriman pun sama: payload beda dengan key yang sama -> 409,
+  // BUKAN replay dan bukan request baru.
+  const after = await ingress.onRequest({ request: idemReq(auth, "key-konflik", { model: "LAIN" }), env });
+  assert.equal(after.status, 409);
+  assert.equal(Number(env.DB.raw("SELECT COUNT(*) AS n FROM tunnel_requests")[0].n), 0);
+  // Sedangkan retry yang benar-benar identik tetap replay.
+  const replay = await ingress.onRequest({ request: idemReq(auth, "key-konflik", { model: "x" }), env });
+  assert.equal(replay.status, 200);
+  assert.equal(await replay.text(), "jawaban-1");
+});
+
+test("putaran 4: migrasi 004 di atas 001+002+003 — kolom principal/fingerprint + index unik gabungan", async () => {
+  const db = new FakeD1(
+    "CREATE TABLE tunnel_requests (id TEXT PRIMARY KEY, method TEXT, path TEXT, headers TEXT, body TEXT, status TEXT, created_at INTEGER);" +
+    "CREATE TABLE tunnel_responses (id TEXT PRIMARY KEY, status_code INTEGER, headers TEXT, body TEXT, created_at INTEGER);"
+  );
+  const runMig = (file) => {
+    const sql = readFileSync(join(root, file), "utf8").replace(/--.*$/gm, "");
+    for (const stmt of sql.split(";")) {
+      const clean = stmt.trim();
+      if (clean) db.db.exec(clean);
+    }
+  };
+  runMig("tunnel/migrations/001-claim-lease.sql");
+  runMig("tunnel/migrations/002-idempotency-ratelimit.sql");
+  runMig("tunnel/migrations/003-response-idempotency.sql");
+  runMig("tunnel/migrations/004-idempotency-principal.sql");
+  for (const tbl of ["tunnel_requests", "tunnel_responses"]) {
+    const cols = db.raw(`PRAGMA table_info(${tbl})`).map((r) => r.name);
+    assert.ok(cols.includes("idem_principal"), tbl + ": idem_principal hilang");
+    assert.ok(cols.includes("idem_fingerprint"), tbl + ": idem_fingerprint hilang");
+  }
+  // Index unik kini GABUNGAN: key sama untuk dua principal berbeda sah,
+  // key+principal yang sama tetap ditolak.
+  db.rawRun("INSERT INTO tunnel_responses (id, idempotency_key, idem_principal) VALUES ('x1','k','auth:aaa')");
+  db.rawRun("INSERT INTO tunnel_responses (id, idempotency_key, idem_principal) VALUES ('x2','k','auth:bbb')");
+  assert.throws(() =>
+    db.rawRun("INSERT INTO tunnel_responses (id, idempotency_key, idem_principal) VALUES ('x3','k','auth:aaa')"));
+  assert.equal(db.raw("SELECT COUNT(*) AS n FROM tunnel_responses")[0].n, 2);
+});
+
 test("migrasi 003 di atas 001+002: kolom idempotency respons + index unik", async () => {
   const db = new FakeD1(
     "CREATE TABLE tunnel_requests (id TEXT PRIMARY KEY, method TEXT, path TEXT, headers TEXT, body TEXT, status TEXT, created_at INTEGER);" +

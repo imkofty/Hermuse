@@ -48,12 +48,16 @@ need "$REQ_COLS" claim_token              migrations/001-claim-lease.sql
 need "$REQ_COLS" claimed_at               migrations/001-claim-lease.sql
 need "$REQ_COLS" idempotency_key          migrations/002-idempotency-ratelimit.sql
 need "$RES_COLS" idempotency_key          migrations/003-response-idempotency.sql
+need "$REQ_COLS" idem_principal           migrations/004-idempotency-principal.sql
+need "$REQ_COLS" idem_fingerprint         migrations/004-idempotency-principal.sql
+need "$RES_COLS" idem_principal           migrations/004-idempotency-principal.sql
+need "$RES_COLS" idem_fingerprint         migrations/004-idempotency-principal.sql
 need "$OBJECTS"  idx_tunnel_requests_idem  migrations/002-idempotency-ratelimit.sql
 need "$OBJECTS"  idx_tunnel_responses_idem migrations/003-response-idempotency.sql
 
 if [ "$missing" -eq 0 ]; then
-  echo "OK: skema tunnel lengkap (migrasi 001-003 terkonfirmasi) untuk D1 '$DB'."
+  echo "OK: skema tunnel lengkap (migrasi 001-004 terkonfirmasi) untuk D1 '$DB'."
 else
-  echo "Skema BELUM lengkap — fungsi tunnel akan error sampai migrasi di atas dijalankan BERURUTAN (001, lalu 002, lalu 003)." >&2
+  echo "Skema BELUM lengkap — fungsi tunnel akan error sampai migrasi di atas dijalankan BERURUTAN (001, lalu 002, lalu 003, lalu 004)." >&2
 fi
 exit "$missing"

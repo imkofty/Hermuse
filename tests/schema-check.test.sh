@@ -22,8 +22,8 @@ done
 emit() { printf '[{"results":[%s],"success":true}]' "$1"; }
 if [ "${MOCK_SCHEMA:-full}" = "full" ]; then
   case "$cmd" in
-    *tunnel_requests*)  emit '{"name":"id"},{"name":"claim_token"},{"name":"claimed_at"},{"name":"idempotency_key"}' ;;
-    *tunnel_responses*) emit '{"name":"id"},{"name":"idempotency_key"}' ;;
+    *tunnel_requests*)  emit '{"name":"id"},{"name":"claim_token"},{"name":"claimed_at"},{"name":"idempotency_key"},{"name":"idem_principal"},{"name":"idem_fingerprint"}' ;;
+    *tunnel_responses*) emit '{"name":"id"},{"name":"idempotency_key"},{"name":"idem_principal"},{"name":"idem_fingerprint"}' ;;
     *sqlite_master*)    emit '{"name":"tunnel_requests"},{"name":"tunnel_responses"},{"name":"tunnel_rate_limits"},{"name":"idx_tunnel_requests_idem"},{"name":"idx_tunnel_responses_idem"}' ;;
     *) emit '' ;;
   esac
@@ -57,6 +57,7 @@ rc=$?
 [ $rc -eq 1 ] || { echo "FAIL [skema lama]: exit=$rc, seharusnya 1. Output: $out"; fail=1; }
 printf '%s' "$out" | grep -q "001-claim-lease.sql" || { echo "FAIL [skema lama]: tidak menyebut migrasi 001. Output: $out"; fail=1; }
 printf '%s' "$out" | grep -q "003-response-idempotency.sql" || { echo "FAIL [skema lama]: tidak menyebut migrasi 003. Output: $out"; fail=1; }
+printf '%s' "$out" | grep -q "004-idempotency-principal.sql" || { echo "FAIL [skema lama]: tidak menyebut migrasi 004. Output: $out"; fail=1; }
 
 # 3. Tanpa argumen -> exit 2
 PATH="$BIN:$PATH" bash "$ROOT/scripts/check-tunnel-schema.sh" >/dev/null 2>&1

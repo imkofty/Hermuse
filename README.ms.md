@@ -255,10 +255,26 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <nama-projek-pages> 
 - **Auth tunnel fail-closed.** Fungsi Pages menolak semua panggilan poll/respond
   melainkan `TUNNEL_KEY` ditetapkan sebagai Pages secret DAN sepadan dengan
   key client — secret kosong tidak lagi bermakna "tunnel terbuka".
-- **Naik taraf pangkalan data tunnel sedia ada?** Jalankan migrasi sekali ini
-  supaya lajur tuntutan atomik tersedia:
+- **Naik taraf pangkalan data tunnel sedia ada?** Jalankan migrasi sekali
+  jalan ini **mengikut urutan** — pangkalan data lama memerlukan ketiga-tiganya,
+  bukan yang pertama sahaja:
   `wrangler d1 execute <db-name> --remote --file=tunnel/migrations/001-claim-lease.sql`
-  Pemasangan baharu tidak memerlukannya (schema.sql sudah memuat lajurnya).
+  kemudian `002-idempotency-ratelimit.sql`, kemudian `003-response-idempotency.sql`
+  (arahan sama, `--file` berbeza). Pemasangan baharu tidak memerlukannya
+  (schema.sql sudah memuat semuanya), dan menjalankan semula
+  `scripts/setup-tunnel.sh` menggunakannya untuk anda. Sahkan selepas itu
+  dengan `bash scripts/check-tunnel-schema.sh <db-name>` — skrip tersebut
+  mencetak arahan pembaikan yang tepat untuk apa yang masih kurang.
+- **Muatan dihadkan mengikut muatan simpan D1.** D1 menghadkan satu
+  string/BLOB/baris kepada 2,000,000 bait dan badan bergerak sebagai
+  Base64, jadi tunnel menerima badan permintaan/respons sehingga
+  1,350,000 bait mentah (1,800,000 aksara Base64); muatan lebih besar
+  menerima 413 yang jelas, bukan sisipan pangkalan data yang gagal.
+- **Semakan kesihatan watchdog melalui tunnel sebenar.** Dengan fail
+  `.health-key` (dicipta `scripts/setup-tunnel.sh`), watchdog dan doctor
+  mengesahkan tunnel awam dari hujung ke hujung menggunakan prob nonce
+  yang dijawab client setempat — 401/403 daripada edge sahaja tidak
+  lagi dikira "sihat".
 
 ## Nota
 

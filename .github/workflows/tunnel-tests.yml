@@ -25,6 +25,8 @@ jobs:
         run: bash tests/watchdog.test.sh
       - name: Installer pinned-version test
         run: bash tests/installer-version.test.sh
+      - name: Tunnel schema preflight test
+        run: bash tests/schema-check.test.sh
       - name: Shell syntax check
         run: |
           for f in *.sh scripts/*.sh lib/*.sh; do bash -n "$f"; done

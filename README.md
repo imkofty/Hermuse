@@ -250,10 +250,25 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <pages-project-name>
 - **Tunnel auth fails closed.** The Pages functions reject every poll/respond
   call unless `TUNNEL_KEY` is set as a Pages secret AND matches the client's
   key — an unset secret no longer silently means "open tunnel".
-- **Upgrading an existing tunnel database?** Run the one-time migration so
-  the atomic claim columns exist:
+- **Upgrading an existing tunnel database?** Run the one-time migrations
+  **in order** — old databases need all three, not just the first:
   `wrangler d1 execute <db-name> --remote --file=tunnel/migrations/001-claim-lease.sql`
-  Fresh installs don't need it (schema.sql already includes the columns).
+  then `002-idempotency-ratelimit.sql`, then `003-response-idempotency.sql`
+  (same command, different `--file`). Fresh installs don't need them
+  (schema.sql already includes everything), and re-running
+  `scripts/setup-tunnel.sh` applies them for you. Verify afterwards with
+  `bash scripts/check-tunnel-schema.sh <db-name>` — it prints the exact
+  fix command for anything still missing.
+- **Payloads are capped at what D1 can store.** D1 limits one
+  string/BLOB/row to 2,000,000 bytes and bodies travel as Base64, so the
+  tunnel accepts request/response bodies up to 1,350,000 raw bytes
+  (1,800,000 Base64 chars); larger payloads get a clear 413 instead of a
+  failed database insert.
+- **Watchdog health checks traverse the real tunnel.** With a
+  `.health-key` file (created by `scripts/setup-tunnel.sh`), the watchdog
+  and doctor verify the public tunnel end-to-end with an authenticated
+  nonce probe answered by the local client — an edge 401/403 alone no
+  longer counts as "healthy".
 
 ## Notes
 

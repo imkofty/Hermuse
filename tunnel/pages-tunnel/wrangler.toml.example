@@ -16,13 +16,22 @@ database_id = "ISI_UUID_D1_KAMU_DI_SINI"
 # Variabel & secret Pages (set lewat dashboard Cloudflare atau
 # `wrangler pages secret put <NAMA>` — JANGAN tulis nilainya di file ini):
 #   TUNNEL_KEY        (secret, WAJIB) kunci bersama client lokal;
-#                     tanpa ini poll/respond menolak semua request.
+#                     tanpa ini poll/respond/heartbeat menolak semua.
+#   HEALTH_KEY        (secret, disarankan) kunci probe kesehatan
+#                     watchdog/doctor di /__tunnel-health; tanpa ini
+#                     probe ditolak 403 dan cek ujung-ke-ujung dilewati.
+#                     setup-tunnel.sh membuatnya + memasangnya otomatis.
 #   GATE_PASSWORD     (secret, opsional) password HTTP Basic untuk semua
 #                     halaman non-API (dashboard). User: GATE_USER
-#                     (default "hermuse").
+#                     (default "hermuse"). setup-tunnel.sh memasangnya
+#                     otomatis (kecuali SETUP_NO_GATE=1).
 #   REQUIRE_GATE      (var, opsional) "1" = dashboard WAJIB ter-gate;
 #                     tanpa GATE_PASSWORD, ingress menjawab 500.
 #   RATE_LIMIT_PER_MIN (var, opsional) batas request per IP per menit
 #                     di ingress (default 120; "0" = nonaktif).
 #   INGRESS_WAIT_MS   (var, opsional) masa tunggu respons di ingress
-#                     (default 40000; lease klaim poll 30000).
+#                     (default 40000; lease klaim poll 45000, diperpanjang
+#                     client lewat heartbeat tiap 10 dtk).
+#   IDEMPOTENCY_TTL_MS (var, opsional) masa simpan pemetaan
+#                     idempotency-key -> respons (default 86400000 =
+#                     24 jam); respons biasa tetap dibersihkan per 120 dtk.

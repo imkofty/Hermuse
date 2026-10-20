@@ -5,10 +5,15 @@
 //   total melewati batas langsung menghentikan pembacaan -> 413. Dulu
 //   jalur tanpa Content-Length tetap membaca seluruh body via
 //   arrayBuffer() ke memori sebelum penolakan.
-// - Masa tunggu pemanggil 40 dtk > lease klaim 30 dtk (poll.js): request
-//   yang client-nya mati di tengah jalan masih sempat direbut & dijawab
-//   poller lain SEBELUM pemanggil menyerah. (Bisa diatur via env
-//   INGRESS_WAIT_MS, terutama untuk pengujian.)
+// - Masa tunggu pemanggil default 120 dtk (putaran 6; sebelumnya
+//   40 dtk) — selaras deadline keseluruhan baca body di client
+//   (TUNNEL_RESPONSE_DEADLINE_MS, default 120 dtk), jadi stream
+//   panjang yang sah tidak lagi dipotong ingress di tengah jalan.
+//   Lease klaim 45 dtk (poll.js) diperpanjang client lewat heartbeat
+//   selama backend bekerja: request yang client-nya mati di tengah
+//   jalan masih sempat direbut & dijawab poller lain SEBELUM
+//   pemanggil menyerah. (Bisa diatur via env INGRESS_WAIT_MS,
+//   terutama untuk pengujian.)
 // - Timeout TIDAK lagi menghapus request: pemanggil menerima 504 +
 //   header `x-tunnel-request-id`, dan hasil akhir yang selesai
 //   belakangan bisa diambil lewat GET /__tunnel/result?id=<id> selama
@@ -80,9 +85,17 @@
 //   tidak berubah) — hanya tidak pernah dipakai sebagai replay.
 //   Perilaku principal terverifikasi (replay + 409 fingerprint beda)
 //   tidak berubah dari putaran 4.
+//
+// Pengerasan putaran 6 (audit lanjutan 2026-10-21):
+// - WAIT_MS_DEFAULT 40 dtk -> 120 dtk: masa tunggu ingress kini
+//   selaras deadline keseluruhan client (120 dtk). Di putaran 5
+//   streaming sudah lolos dari head-of-line blocking di client,
+//   tapi pemanggil di ingress tetap menyerah (504) di 40 dtk —
+//   stream ujung-ke-ujung yang sah berumur >40 dtk tidak pernah
+//   sampai ke pemanggil sebagai respons utuh.
 const MAX_BODY_BYTES = 1350000; // -> Base64 1.800.000 char; + header < 2.000.000 byte/baris D1
 const MAX_HEADERS_BYTES = 32768;
-const WAIT_MS_DEFAULT = 40000;
+const WAIT_MS_DEFAULT = 120000;
 const HEALTH_PATH = "/__tunnel-health";
 
 function timingSafeEqual(a, b) {

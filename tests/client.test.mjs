@@ -343,3 +343,77 @@ test("tunnel-client: heartbeat selama backend lambat, health probe, cap respons 
     if (responses.size < 3) throw new Error("client tidak menyelesaikan 3 request. stderr: " + stderr);
   }
 });
+
+test("tunnel-client putaran 6: stream 45 dtk lolos pada timeout DEFAULT (header cepat, body lambat)", { timeout: 150000 }, async () => {
+  // Backend SSE: header dikirim SEKETIKA, lalu body menetes 1 chunk
+  // per detik selama 45 detik — pola streaming LLM sungguhan.
+  // Cacat putaran 6 di kode lama: AbortSignal.timeout(LOCAL_TIMEOUT_MS)
+  // (default 30000) tetap aktif selama body dibaca, jadi stream ini
+  // dibatalkan di detik ke-30 -> 502, walau deadline body resmi
+  // (TUNNEL_RESPONSE_DEADLINE_MS) 120000.
+  const CHUNKS = 45;
+  const expected = Array.from({ length: CHUNKS }, (_, i) => `data: chunk-${i + 1}\n\n`).join("");
+  const backend = createServer((req, res) => {
+    if (req.url === "/stream-panjang") {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.flushHeaders(); // header keluar sekarang; body menyusul pelan-pelan
+      let i = 0;
+      const iv = setInterval(() => {
+        i++;
+        if (res.destroyed) { clearInterval(iv); return; }
+        res.write(`data: chunk-${i}\n\n`);
+        if (i >= CHUNKS) { clearInterval(iv); res.end(); }
+      }, 1000);
+      res.on("close", () => clearInterval(iv));
+    } else { res.writeHead(404); res.end(); }
+  });
+  const backendPort = await listen(backend);
+
+  const batches = [
+    [{ id: "sse1", method: "GET", path: "/stream-panjang", headers: "{}", body: null, claim_token: "tok-sse" }],
+  ];
+  const responses = new Map();
+  const respondOrder = [];
+  const pages = makeBatchPages(batches, responses, respondOrder);
+  const pagesPort = await listen(pages);
+
+  const tmp = mkdtempSync(join(tmpdir(), "hermuse-client-test6-"));
+  const keyFile = join(tmp, "key");
+  writeFileSync(keyFile, "testkey");
+  // KONFIGURASI DEFAULT untuk kedua timeout: kedua env SENGAJA tidak
+  // di-set (dan dibuang dari warisan process.env) — yang diuji adalah
+  // perilaku bawaan produksi, bukan nilai kecil ala tes.
+  const env = { ...process.env };
+  delete env.TUNNEL_LOCAL_TIMEOUT_MS;
+  delete env.TUNNEL_RESPONSE_DEADLINE_MS;
+  Object.assign(env, {
+    TUNNEL_BASE_URL: `http://127.0.0.1:${pagesPort}`,
+    TUNNEL_KEY_FILE: keyFile,
+    TUNNEL_LOCAL: `http://127.0.0.1:${backendPort}`,
+    TUNNEL_POLL_MS: "50",
+  });
+  const startedAt = Date.now();
+  const child = spawn("node", [join(root, "tunnel-client.mjs")], {
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.on("data", (d) => (stderr += d));
+  try {
+    await waitFor(() => responses.size >= 1, 100000);
+    const elapsed = Date.now() - startedAt;
+    const r = responses.get("sse1");
+    // Stream utuh 45 dtk: melewati AMBANG 40 dtk (dan timeout lama 30
+    // dtk) tanpa dibatalkan, body lengkap persis seperti dikirim.
+    assert.ok(elapsed > 40000, `stream selesai terlalu cepat: ${elapsed}ms`);
+    assert.equal(r.status_code, 200);
+    assert.equal(Buffer.from(r.body, "base64").toString(), expected);
+  } finally {
+    child.kill("SIGKILL");
+    pages.close();
+    if (typeof backend.closeAllConnections === "function") backend.closeAllConnections();
+    backend.close();
+    rmSync(tmp, { recursive: true, force: true });
+    if (responses.size < 1) throw new Error("client tidak menyelesaikan request SSE. stderr: " + stderr);
+  }
+});

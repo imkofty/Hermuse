@@ -30,7 +30,7 @@ database_id = "ISI_UUID_D1_KAMU_DI_SINI"
 #   RATE_LIMIT_PER_MIN (var, opsional) batas request per IP per menit
 #                     di ingress (default 120; "0" = nonaktif).
 #   INGRESS_WAIT_MS   (var, opsional) masa tunggu respons di ingress
-#                     (default 40000; lease klaim poll 45000, diperpanjang
+#                     (default 120000; lease klaim poll 45000, diperpanjang
 #                     client lewat heartbeat tiap 10 dtk).
 #   IDEMPOTENCY_TTL_MS (var, opsional) masa simpan pemetaan
 #                     idempotency-key -> respons (default 86400000 =

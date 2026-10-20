@@ -672,3 +672,14 @@ test("putaran 5 (a3): ANON key sama, body beda -> BUKAN 409, diproses segar", as
   assert.equal(r2.status, 200);
   assert.equal(await r2.text(), "jawaban-anon-lain");
 });
+
+test("putaran 6: WAIT_MS_DEFAULT ingress = 120000 (selaras deadline baca body client)", () => {
+  // Konstanta tidak diekspor fungsi, jadi nilai default dibuktikan
+  // dari sumbernya langsung. Override env INGRESS_WAIT_MS tetap
+  // dihormati — dibuktikan tes-tes lain di file ini yang semuanya
+  // mengandalkan override bernilai kecil.
+  const src = readFileSync(join(root, "tunnel/pages-tunnel/functions/[[path]].js"), "utf8");
+  const m = src.match(/const WAIT_MS_DEFAULT = (\d+);/);
+  assert.ok(m, "WAIT_MS_DEFAULT tidak ditemukan di [[path]].js");
+  assert.equal(Number(m[1]), 120000);
+});

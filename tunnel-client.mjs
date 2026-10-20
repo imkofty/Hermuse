@@ -11,7 +11,12 @@
 //                                default 400. Sejak server pakai long-poll (~20 detik
 //                                menahan koneksi), nilai ini BUKAN interval polling
 //                                utama — hanya jeda singkat sebelum poll berikutnya.
-//   TUNNEL_LOCAL_TIMEOUT_MS opsional — timeout forward ke backend lokal, default 30000.
+//   TUNNEL_LOCAL_TIMEOUT_MS opsional — batas menunggu HEADER pertama
+//                                (time-to-first-byte) dari backend lokal,
+//                                default 30000. Begitu header diterima,
+//                                timeout ini MATI: body/stream yang
+//                                mengalir sesudahnya hanya diatur
+//                                TUNNEL_RESPONSE_DEADLINE_MS.
 //   TUNNEL_MAX_IN_FLIGHT opsional — batas request yang diproses BERSAMAAN,
 //                                default 6. Poll hanya mengklaim sebanyak
 //                                slot yang kosong (lihat catatan putaran 5
@@ -53,6 +58,15 @@
 //   (TUNNEL_MAX_IN_FLIGHT). Pembacaan body respons juga punya
 //   deadline keseluruhan (TUNNEL_RESPONSE_DEADLINE_MS) agar satu
 //   stream macet tidak menggantung selamanya.
+// - Putaran 6: streaming kini benar-benar ujung-ke-ujung.
+//   TUNNEL_LOCAL_TIMEOUT_MS hanya membatasi fase menunggu header
+//   backend (time-to-first-byte); dulu sinyal timeout-nya tetap
+//   aktif selama body dibaca, jadi stream apa pun yang berumur
+//   >30 dtk dibatalkan di 30 dtk walau deadline body resminya
+//   120 dtk. Default masa tunggu ingress (WAIT_MS_DEFAULT di
+//   [[path]].js) juga dinaikkan 40 dtk -> 120 dtk agar selaras
+//   dengan deadline client — pemanggil tidak lagi menerima 504
+//   di tengah stream yang sah.
 import { readFileSync } from "node:fs";
 import { t } from "./lib/i18n.mjs";
 
@@ -210,13 +224,28 @@ async function handleOne(req) {
   try {
     const h = { ...JSON.parse(headers || "{}") };
     delete h["host"];
+    // Putaran 6: timeout lokal HANYA untuk fase menunggu header
+    // (time-to-first-byte). AbortController + timer yang DIMATIKAN
+    // begitu fetch() resolve (header diterima); pembacaan body
+    // sesudahnya semata-mata diatur RESPONSE_DEADLINE_MS lewat
+    // readCapped. Dulu AbortSignal.timeout(LOCAL_TIMEOUT_MS) tetap
+    // terpasang selama body dibaca — stream >30 dtk selalu mati
+    // di 30 dtk walau deadline resminya 120 dtk.
+    const ctrl = new AbortController();
+    const headerTimer = setTimeout(() => ctrl.abort(), LOCAL_TIMEOUT_MS);
+    if (typeof headerTimer.unref === "function") headerTimer.unref();
     const init = {
       method, headers: h,
       redirect: "manual",
-      signal: AbortSignal.timeout(LOCAL_TIMEOUT_MS),
+      signal: ctrl.signal,
     };
     if (body && method !== "GET" && method !== "HEAD") init.body = Buffer.from(body, "base64");
-    const r = await fetch(LOCAL + path, init);
+    let r;
+    try {
+      r = await fetch(LOCAL + path, init);
+    } finally {
+      clearTimeout(headerTimer);
+    }
     const buf = await readCapped(r, Date.now() + RESPONSE_DEADLINE_MS);
     const resHeaders = {};
     r.headers.forEach((v, k) => { resHeaders[k] = v; });

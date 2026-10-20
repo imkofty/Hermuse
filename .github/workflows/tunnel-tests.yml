@@ -1,0 +1,26 @@
+name: tunnel-tests
+
+# Tunnel security & correctness suite: menjalankan Pages Functions tunnel
+# ASLI melawan SQLite sungguhan (node:sqlite) — regresi auth fail-closed,
+# klaim atomik anti double-processing, lease/reclaim, dan batas body.
+# Plus cek sintaks semua shell script di repo.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Run tunnel test suite
+        run: node --test tests/*.test.mjs
+      - name: Shell syntax check
+        run: |
+          for f in *.sh scripts/*.sh lib/*.sh; do bash -n "$f"; done
+      - name: i18n completeness check
+        run: bash scripts/check-i18n.sh

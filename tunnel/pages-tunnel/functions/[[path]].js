@@ -1,4 +1,9 @@
 // Catch-all: browser -> D1 queue -> tunggu client lokal merespons
+//
+// Batas ukuran body: request raksasa ditolak 413 sebelum masuk antrean —
+// dulu body dibaca utuh ke memori (arrayBuffer) dan diteruskan tanpa batas.
+const MAX_BODY_BYTES = 6 * 1024 * 1024; // 6 MiB
+
 export async function onRequest({ request, env }) {
   const url = new URL(request.url);
   const id = crypto.randomUUID();
@@ -12,7 +17,12 @@ export async function onRequest({ request, env }) {
 
   let bodyB64 = null;
   if (request.body && request.method !== "GET" && request.method !== "HEAD") {
+    const declared = parseInt(request.headers.get("content-length") || "0", 10);
+    if (declared > MAX_BODY_BYTES)
+      return new Response("request body too large", { status: 413 });
     const buf = await request.arrayBuffer();
+    if (buf.byteLength > MAX_BODY_BYTES)
+      return new Response("request body too large", { status: 413 });
     if (buf.byteLength > 0) {
       const bytes = new Uint8Array(buf);
       let bin = "";

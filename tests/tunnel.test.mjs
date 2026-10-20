@@ -17,6 +17,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const schema = readFileSync(join(root, "tunnel/schema.sql"), "utf8");
 const poll = await import(pathToFileURL(join(root, "tunnel/pages-tunnel/functions/__tunnel/poll.js")));
 const respond = await import(pathToFileURL(join(root, "tunnel/pages-tunnel/functions/__tunnel/respond.js")));
+const heartbeat = await import(pathToFileURL(join(root, "tunnel/pages-tunnel/functions/__tunnel/heartbeat.js")));
 const result = await import(pathToFileURL(join(root, "tunnel/pages-tunnel/functions/__tunnel/result.js")));
 const ingress = await import(pathToFileURL(join(root, "tunnel/pages-tunnel/functions/[[path]].js")));
 
@@ -311,4 +312,149 @@ test("respond ke request yang tidak ada -> 409 (validasi atomik)", async () => {
     request: postReq({ key: KEY, id: "tidak-ada", claim_token: "apapun", status_code: 200 }), env,
   });
   assert.equal(res.status, 409);
+});
+
+// --- Putaran 3 (audit lanjutan 2026-10-20) ---
+
+test("batas payload = kapasitas D1: 1.350.000 byte lolos, 1.350.001 ditolak 413", async () => {
+  const env = { ...makeEnv(), INGRESS_WAIT_MS: "200" };
+  const mk = (n) => new Request("https://tunnel.example/upload", {
+    method: "POST", headers: { "content-length": String(n) }, body: "x",
+  });
+  const atLimit = await ingress.onRequest({ request: mk(1350000), env });
+  assert.notEqual(atLimit.status, 413); // masuk antrean (504: tak ada client)
+  const overLimit = await ingress.onRequest({ request: mk(1350001), env });
+  assert.equal(overLimit.status, 413);
+});
+
+test("respond menolak body Base64 melewati kapasitas D1 (413), tepat di batas lolos", async () => {
+  const env = makeEnv();
+  seedPending(env, "big1");
+  const { requests } = await (await poll.onRequestPost({ request: postReq({ key: KEY, limit: 1 }), env })).json();
+  const token = requests[0].claim_token;
+  const over = await respond.onRequestPost({
+    request: postReq({ key: KEY, id: "big1", claim_token: token, status_code: 200, body: "A".repeat(1800001) }), env,
+  });
+  assert.equal(over.status, 413);
+  const atLimit = await respond.onRequestPost({
+    request: postReq({ key: KEY, id: "big1", claim_token: token, status_code: 200, body: "A".repeat(1800000) }), env,
+  });
+  assert.equal(atLimit.status, 200);
+});
+
+test("idempotency SETELAH pengiriman: retry key sama dilayani dari respons, tanpa request baru", async () => {
+  const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  const mk = () => new Request("https://tunnel.example/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "key-selesai" },
+    body: JSON.stringify({ model: "x" }),
+  });
+  const p1 = ingress.onRequest({ request: mk(), env });
+  await new Promise((r) => setTimeout(r, 300));
+  const { requests } = await (await poll.onRequestPost({ request: postReq({ key: KEY, limit: 1 }), env })).json();
+  assert.equal(requests.length, 1);
+  await respond.onRequestPost({
+    request: postReq({
+      key: KEY, id: requests[0].id, claim_token: requests[0].claim_token,
+      status_code: 200, headers: {}, body: Buffer.from("jawaban").toString("base64"),
+    }), env,
+  });
+  const r1 = await p1;
+  assert.equal(r1.status, 200);
+  assert.equal(await r1.text(), "jawaban");
+  // Baris request sudah terhapus oleh pengiriman pertama.
+  assert.equal(Number(env.DB.raw("SELECT COUNT(*) AS n FROM tunnel_requests")[0].n), 0);
+  // Retry SETELAH sukses: harus menerima jawaban yang sama TANPA
+  // request baru (efek samping tidak boleh berulang).
+  const r2 = await ingress.onRequest({ request: mk(), env });
+  assert.equal(r2.status, 200);
+  assert.equal(await r2.text(), "jawaban");
+  assert.equal(Number(env.DB.raw("SELECT COUNT(*) AS n FROM tunnel_requests")[0].n), 0);
+});
+
+test("heartbeat memperpanjang lease: klaim yang diperpanjang tidak direbut poller lain", async () => {
+  const env = makeEnv();
+  seedPending(env, "h1");
+  const { requests } = await (await poll.onRequestPost({ request: postReq({ key: KEY, limit: 1 }), env })).json();
+  const token = requests[0].claim_token;
+  // Umur klaim dibuat 40 dtk: melewati lease lama 30 dtk (dulu direbut),
+  // belum melewati lease baru 45 dtk.
+  env.DB.rawRun("UPDATE tunnel_requests SET claimed_at=? WHERE id='h1'", Date.now() - 40000);
+  const hb = await heartbeat.onRequestPost({
+    request: postReq({ key: KEY, id: "h1", claim_token: token }), env,
+  });
+  assert.equal(hb.status, 200);
+  const row = env.DB.raw("SELECT claimed_at FROM tunnel_requests WHERE id='h1'")[0];
+  assert.ok(Date.now() - Number(row.claimed_at) < 5000, "claimed_at harus segar setelah heartbeat");
+  // Poller lain hanya boleh menerima request pending LAIN, bukan h1.
+  seedPending(env, "h2");
+  const other = await (await poll.onRequestPost({ request: postReq({ key: KEY, limit: 4 }), env })).json();
+  assert.deepEqual(other.requests.map((r) => r.id), ["h2"]);
+});
+
+test("heartbeat token salah / klaim hilang -> 409 & fail-closed tanpa TUNNEL_KEY", async () => {
+  const env = makeEnv();
+  seedPending(env, "h1");
+  const { requests } = await (await poll.onRequestPost({ request: postReq({ key: KEY, limit: 1 }), env })).json();
+  const wrong = await heartbeat.onRequestPost({
+    request: postReq({ key: KEY, id: "h1", claim_token: "bukan-tokennya" }), env,
+  });
+  assert.equal(wrong.status, 409);
+  const noKey = await heartbeat.onRequestPost({
+    request: postReq({ key: KEY, id: "h1", claim_token: requests[0].claim_token }),
+    env: makeEnv(false),
+  });
+  assert.equal(noKey.status, 403);
+});
+
+test("health probe: tanpa/salah health-key -> 403; key benar -> request masuk antrean tunnel", async () => {
+  const env = { ...makeEnv(), HEALTH_KEY: "health-secret", INGRESS_WAIT_MS: "300" };
+  const noKey = await ingress.onRequest({
+    request: new Request("https://tunnel.example/__tunnel-health"), env,
+  });
+  assert.equal(noKey.status, 403);
+  const wrongKey = await ingress.onRequest({
+    request: new Request("https://tunnel.example/__tunnel-health", {
+      headers: { "x-tunnel-health-key": "salah" },
+    }), env,
+  });
+  assert.equal(wrongKey.status, 403);
+  const ok = await ingress.onRequest({
+    request: new Request("https://tunnel.example/__tunnel-health", {
+      headers: { "x-tunnel-health-key": "health-secret", "x-health-nonce": "n-1" },
+    }), env,
+  });
+  assert.equal(ok.status, 504); // lolos auth -> menunggu client (tak ada client)
+  const rows = env.DB.raw("SELECT path FROM tunnel_requests");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].path, "/__tunnel-health");
+  // HEALTH_KEY tidak ter-set di server = fail-closed juga.
+  const envNoKey = { ...makeEnv(), INGRESS_WAIT_MS: "300" };
+  const closed = await ingress.onRequest({
+    request: new Request("https://tunnel.example/__tunnel-health", {
+      headers: { "x-tunnel-health-key": "apapun" },
+    }), env: envNoKey,
+  });
+  assert.equal(closed.status, 403);
+});
+
+test("migrasi 003 di atas 001+002: kolom idempotency respons + index unik", async () => {
+  const db = new FakeD1(
+    "CREATE TABLE tunnel_requests (id TEXT PRIMARY KEY, method TEXT, path TEXT, headers TEXT, body TEXT, status TEXT, created_at INTEGER);" +
+    "CREATE TABLE tunnel_responses (id TEXT PRIMARY KEY, status_code INTEGER, headers TEXT, body TEXT, created_at INTEGER);"
+  );
+  const runMig = (file) => {
+    const sql = readFileSync(join(root, file), "utf8").replace(/--.*$/gm, "");
+    for (const stmt of sql.split(";")) {
+      const clean = stmt.trim();
+      if (clean) db.db.exec(clean);
+    }
+  };
+  runMig("tunnel/migrations/001-claim-lease.sql");
+  runMig("tunnel/migrations/002-idempotency-ratelimit.sql");
+  runMig("tunnel/migrations/003-response-idempotency.sql");
+  const cols = db.raw("PRAGMA table_info(tunnel_responses)").map((r) => r.name);
+  assert.ok(cols.includes("idempotency_key"));
+  const idx = db.raw("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tunnel_responses_idem'");
+  assert.equal(idx.length, 1);
 });

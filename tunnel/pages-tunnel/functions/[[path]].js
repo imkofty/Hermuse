@@ -27,8 +27,33 @@
 //   wajib HTTP Basic auth (user dari env GATE_USER, default "hermuse").
 //   Bila env REQUIRE_GATE=1 tapi GATE_PASSWORD kosong -> 500
 //   (fail-closed: lebih baik tidak melayani daripada dashboard terbuka).
-const MAX_BODY_BYTES = 6 * 1024 * 1024; // 6 MiB
+//
+// Pengerasan putaran 3 (audit lanjutan 2026-10-20):
+// - Batas body DITURUNKAN ke kapasitas simpan D1 yang sebenarnya: D1
+//   membatasi satu string/BLOB/baris pada 2.000.000 byte, sedangkan body
+//   disimpan Base64 (mengembang 4/3). Batas lama 6 MiB mentah (~8 MB
+//   Base64) dan respons client 32 MiB (~42,7 MB Base64) TIDAK PERNAH
+//   muat di D1 — insert-nya pasti gagal di produksi. Sekarang: body
+//   mentah maks 1.350.000 byte -> Base64 tepat 1.800.000 karakter, JSON
+//   header maks 32.768 byte; total baris selalu < 2.000.000 byte.
+// - Idempotency SETELAH pengiriman: kiriman ulang dengan key yang sama
+//   kini dicek juga ke tunnel_responses (key disalin respond.js ke baris
+//   respons; masa simpan default 24 jam). Dulu key hanya dicari di
+//   tunnel_requests, yang barisnya dihapus saat pengiriman pertama —
+//   retry setelah sukses membuat request BARU dan efek samping ganda.
+// - Health probe terautentikasi: GET /__tunnel-health memakai header
+//   x-tunnel-health-key (secret HEALTH_KEY, dibandingkan timing-safe).
+//   Request-nya tetap melewati antrean tunnel seperti request biasa dan
+//   dijawab tunnel-client.mjs dengan nonce + status backend, jadi
+//   watchdog bisa membuktikan jalur ujung-ke-ujung benar-benar hidup —
+//   bukan sekadar "ada yang menjawab 401 di edge" seperti sebelumnya.
+// - Observability: setiap respons membawa header x-tunnel-request-id
+//   (korelasi pemanggil <-> log), dan ingress menulis log terstruktur
+//   satu baris JSON per request selesai/timeout.
+const MAX_BODY_BYTES = 1350000; // -> Base64 1.800.000 char; + header < 2.000.000 byte/baris D1
+const MAX_HEADERS_BYTES = 32768;
 const WAIT_MS_DEFAULT = 40000;
+const HEALTH_PATH = "/__tunnel-health";
 
 function timingSafeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
@@ -63,8 +88,9 @@ async function readBodyCapped(request) {
   return { bytes: new Uint8Array(buf) };
 }
 
-function deliver(row) {
+function deliver(row, id) {
   const resHeaders = new Headers(JSON.parse(row.headers || "{}"));
+  if (id) resHeaders.set("x-tunnel-request-id", id);
   let body = null;
   if (row.body) {
     const bin = atob(row.body);
@@ -77,10 +103,21 @@ function deliver(row) {
 
 export async function onRequest({ request, env }) {
   const url = new URL(request.url);
+  const startedAt = Date.now();
+
+  // --- Health probe: autentikasi kuncinya sendiri, bebas gate Basic ---
+  // (jalur ini tetap masuk antrean tunnel; yang menjawab adalah client
+  // lokal, jadi 200 di sini membuktikan seluruh jalur hidup).
+  const isHealth = url.pathname === HEALTH_PATH;
+  if (isHealth) {
+    const hk = request.headers.get("x-tunnel-health-key") || "";
+    if (!env.HEALTH_KEY || !timingSafeEqual(hk, env.HEALTH_KEY))
+      return new Response("forbidden", { status: 403 });
+  }
 
   // --- Gate password (hanya path non-API) ---
   const isApi = url.pathname.startsWith("/v1/") || url.pathname.startsWith("/__tunnel/");
-  if (!isApi) {
+  if (!isApi && !isHealth) {
     if (env.REQUIRE_GATE === "1" && !env.GATE_PASSWORD)
       return new Response("gate required but GATE_PASSWORD is not configured", { status: 500 });
     if (env.GATE_PASSWORD) {
@@ -144,12 +181,31 @@ export async function onRequest({ request, env }) {
     }
   }
 
+  // Header ikut disimpan sebagai JSON di baris D1 yang sama — batasi
+  // ukurannya agar total baris tidak melewati batas D1 (lihat konstanta).
+  if (JSON.stringify(headers).length > MAX_HEADERS_BYTES)
+    return new Response("request headers too large", { status: 413 });
+
   // --- Enqueue (dengan idempotency) ---
   const idemKey = request.headers.get("idempotency-key") ||
                   request.headers.get("x-idempotency-key");
   let id = crypto.randomUUID();
   let enqueued = false;
   if (idemKey) {
+    // Replay SETELAH pengiriman pertama: hasilnya sudah ada di
+    // tunnel_responses (key tersalin di sana) walau baris request-nya
+    // sudah dihapus — layani langsung, JANGAN buat request baru.
+    const prior = await env.DB.prepare(
+      "SELECT id, status_code, headers, body FROM tunnel_responses WHERE idempotency_key=?"
+    ).bind(idemKey).first();
+    if (prior) {
+      console.log(JSON.stringify({
+        ev: "ingress_replay", id: prior.id, method: request.method,
+        path: url.pathname, status: prior.status_code,
+        ms: Date.now() - startedAt,
+      }));
+      return deliver(prior, prior.id);
+    }
     const existing = await env.DB.prepare(
       "SELECT id FROM tunnel_requests WHERE idempotency_key=?"
     ).bind(idemKey).first();
@@ -186,13 +242,21 @@ export async function onRequest({ request, env }) {
       // Hanya baris request yang dihapus; baris respons bertahan s/d
       // masa simpan antrean agar replay/result-fetch tetap bisa membacanya.
       await env.DB.prepare("DELETE FROM tunnel_requests WHERE id=?").bind(id).run();
-      return deliver(row);
+      console.log(JSON.stringify({
+        ev: "ingress", id, method: request.method, path: url.pathname,
+        status: row.status_code, ms: Date.now() - startedAt,
+      }));
+      return deliver(row, id);
     }
     await new Promise((r) => setTimeout(r, 400));
   }
 
   // Request SENGAJA tidak dihapus: client mungkin masih memprosesnya.
   // Hasil akhirnya bisa diambil lewat /__tunnel/result?id=<id>.
+  console.log(JSON.stringify({
+    ev: "ingress_timeout", id, method: request.method, path: url.pathname,
+    status: 504, ms: Date.now() - startedAt,
+  }));
   return new Response("tunnel timeout (client offline?)", {
     status: 504,
     headers: { "x-tunnel-request-id": id },

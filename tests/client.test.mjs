@@ -107,3 +107,85 @@ test("tunnel-client: redirect tidak diikuti, timeout -> 502, respons normal utuh
     if (responses.size < 3) throw new Error("client tidak menyelesaikan 3 request. stderr: " + stderr);
   }
 });
+
+test("tunnel-client: heartbeat selama backend lambat, health probe, cap respons D1", { timeout: 25000 }, async () => {
+  // --- Backend stub: /v1/models (health), /slow-ok (1,2 dtk), /big (2 MB) ---
+  let slowHits = 0;
+  const backend = createServer((req, res) => {
+    if (req.url === "/v1/models") { res.writeHead(200, { "content-type": "application/json" }); res.end("{}"); }
+    else if (req.url === "/slow-ok") { slowHits++; setTimeout(() => { if (!res.destroyed) { res.writeHead(200); res.end("lambat-tapi-beres"); } }, 1200); }
+    else if (req.url === "/big") { res.writeHead(200, { "content-type": "application/octet-stream" }); res.end(Buffer.alloc(2 * 1024 * 1024, 65)); }
+    else { res.writeHead(404); res.end(); }
+  });
+  const backendPort = await listen(backend);
+
+  // --- Pages stub dengan heartbeat ---
+  const queue = [
+    { id: "s1", method: "GET", path: "/slow-ok", headers: "{}", body: null, claim_token: "tok-s1" },
+    { id: "h1", method: "GET", path: "/__tunnel-health", headers: JSON.stringify({ "x-health-nonce": "nonce-xyz" }), body: null, claim_token: "tok-h1" },
+    { id: "b1", method: "GET", path: "/big", headers: "{}", body: null, claim_token: "tok-b1" },
+  ];
+  const responses = new Map();
+  const heartbeats = [];
+  const pages = createServer(async (req, res) => {
+    const body = await readJson(req);
+    if (req.url === "/__tunnel/poll") {
+      const out = queue.splice(0, queue.length);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ requests: out }));
+    } else if (req.url === "/__tunnel/respond") {
+      responses.set(body.id, body);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    } else if (req.url === "/__tunnel/heartbeat") {
+      heartbeats.push(body);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    } else { res.writeHead(404); res.end(); }
+  });
+  const pagesPort = await listen(pages);
+
+  const tmp = mkdtempSync(join(tmpdir(), "hermuse-client-test2-"));
+  const keyFile = join(tmp, "key");
+  writeFileSync(keyFile, "testkey");
+  const child = spawn("node", [join(root, "tunnel-client.mjs")], {
+    env: {
+      ...process.env,
+      TUNNEL_BASE_URL: `http://127.0.0.1:${pagesPort}`,
+      TUNNEL_KEY_FILE: keyFile,
+      TUNNEL_LOCAL: `http://127.0.0.1:${backendPort}`,
+      TUNNEL_LOCAL_TIMEOUT_MS: "5000",
+      TUNNEL_HEARTBEAT_MS: "250",
+      TUNNEL_POLL_MS: "50",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.on("data", (d) => (stderr += d));
+  try {
+    await waitFor(() => responses.size >= 3, 15000);
+    // Heartbeat: request lambat 1,2 dtk dengan interval 250 mdtk harus
+    // memicu beberapa perpanjangan lease untuk klaim yang sama.
+    const hbS1 = heartbeats.filter((h) => h.id === "s1" && h.claim_token === "tok-s1");
+    assert.ok(hbS1.length >= 2, `heartbeat s1 hanya ${hbS1.length}x`);
+    assert.equal(slowHits, 1); // backend lambat dikerjakan tepat sekali
+    const s1 = responses.get("s1");
+    assert.equal(s1.status_code, 200);
+    assert.equal(Buffer.from(s1.body, "base64").toString(), "lambat-tapi-beres");
+    // Health probe: nonce ter-echo + backend_ok dari /v1/models backend.
+    const h1 = responses.get("h1");
+    assert.equal(h1.status_code, 200);
+    const health = JSON.parse(Buffer.from(h1.body, "base64").toString());
+    assert.equal(health.nonce, "nonce-xyz");
+    assert.equal(health.backend_ok, true);
+    assert.equal(health.backend_status, 200);
+    // Respons backend 2 MB melewati kapasitas D1 -> 502, bukan dikirim.
+    const b1 = responses.get("b1");
+    assert.equal(b1.status_code, 502);
+  } finally {
+    child.kill("SIGKILL");
+    pages.close(); backend.close();
+    rmSync(tmp, { recursive: true, force: true });
+    if (responses.size < 3) throw new Error("client tidak menyelesaikan 3 request. stderr: " + stderr);
+  }
+});

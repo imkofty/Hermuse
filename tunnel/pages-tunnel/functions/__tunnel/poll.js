@@ -16,12 +16,22 @@
 // - Lease: klaim membawa claim_token + claimed_at. Klaim yang lebih tua
 //   dari LEASE_MS (client mati sebelum respond) direbut kembali ke
 //   'pending' agar request-nya tidak hilang selamanya.
-// - LEASE_MS (30 dtk) SENGAJA lebih pendek dari masa tunggu ingress
-//   (40 dtk, [[path]].js): request yang client-nya mati di tengah jalan
-//   masih sempat direbut & dijawab poller lain sebelum pemanggil
-//   menyerah — dan hasil yang tetap terlambat bisa diambil pemanggil
-//   lewat GET /__tunnel/result?id=<id>.
-const LEASE_MS = 30000;
+// - Putaran 3: lease TIDAK lagi balapan dengan durasi kerja backend.
+//   Client yang hidup memperpanjang klaimnya lewat __tunnel/heartbeat
+//   (tiap 10 dtk) selama backend masih bekerja, jadi LEASE_MS (45 dtk)
+//   hanya berlaku sebagai batas mati: klaim direbut hanya bila
+//   perpanjangan berhenti — artinya client benar-benar mati/macet.
+//   Tanpa heartbeat, lease 30 dtk vs timeout backend 30 dtk nyaris sama
+//   sehingga poller lain bisa merebut request yang SEDANG dikerjakan
+//   (kerja ganda). Hasil yang tetap terlambat karena client mati bisa
+//   diambil pemanggil lewat GET /__tunnel/result?id=<id>.
+// - Masa simpan respons: respons biasa 120 dtk; respons yang membawa
+//   idempotency_key disimpan s/d IDEMPOTENCY_TTL_MS (default 24 jam)
+//   agar kiriman ulang dengan key yang sama tetap menemukan hasilnya
+//   walau baris request sudah dihapus (lihat [[path]].js & respond.js).
+const LEASE_MS = 45000;
+const RESPONSE_TTL_MS = 120000;
+const IDEMPOTENCY_TTL_MS_DEFAULT = 86400000; // 24 jam
 
 export async function onRequestPost({ request, env }) {
   const { key, limit } = await request.json().catch(() => ({}));
@@ -29,9 +39,13 @@ export async function onRequestPost({ request, env }) {
     return new Response("forbidden", { status: 403 });
 
   const now = Date.now();
+  const idemTtl = parseInt(env.IDEMPOTENCY_TTL_MS || "0", 10) || IDEMPOTENCY_TTL_MS_DEFAULT;
   await env.DB.batch([
     env.DB.prepare("DELETE FROM tunnel_requests WHERE created_at < ?").bind(now - 120000),
-    env.DB.prepare("DELETE FROM tunnel_responses WHERE created_at < ?").bind(now - 120000),
+    env.DB.prepare(
+      "DELETE FROM tunnel_responses WHERE created_at < ? AND idempotency_key IS NULL"
+    ).bind(now - RESPONSE_TTL_MS),
+    env.DB.prepare("DELETE FROM tunnel_responses WHERE created_at < ?").bind(now - idemTtl),
     env.DB.prepare(
       "UPDATE tunnel_requests SET status='pending', claim_token=NULL, claimed_at=NULL " +
       "WHERE status='claimed' AND claimed_at < ?"

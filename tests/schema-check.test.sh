@@ -39,21 +39,27 @@ exit 0
 EOF
 chmod +x "$BIN/wrangler"
 
+# PATH di semua pemanggilan di bawah: stub wrangler PALING DEPAN, tapi
+# PATH asli dipertahankan — node di CI tinggal di toolcache setup-node,
+# bukan /usr/bin; membuang PATH asli membuat skrip exit 2 ("node tidak
+# ditemukan") padahal skripnya benar (pola bug yang sama dengan fix
+# installer-version di putaran 2).
+
 # 1. Skema lengkap -> exit 0 + pesan OK
-out="$(MOCK_SCHEMA=full PATH="$BIN:/usr/bin:/bin" bash "$ROOT/scripts/check-tunnel-schema.sh" mydb 2>&1)"
+out="$(MOCK_SCHEMA=full PATH="$BIN:$PATH" bash "$ROOT/scripts/check-tunnel-schema.sh" mydb 2>&1)"
 rc=$?
 [ $rc -eq 0 ] || { echo "FAIL [skema lengkap]: exit=$rc, seharusnya 0. Output: $out"; fail=1; }
 printf '%s' "$out" | grep -q "^OK:" || { echo "FAIL [skema lengkap]: pesan OK tidak ada. Output: $out"; fail=1; }
 
 # 2. Skema lama -> exit 1 + menunjuk migrasi yang kurang
-out="$(MOCK_SCHEMA=old PATH="$BIN:/usr/bin:/bin" bash "$ROOT/scripts/check-tunnel-schema.sh" mydb 2>&1)"
+out="$(MOCK_SCHEMA=old PATH="$BIN:$PATH" bash "$ROOT/scripts/check-tunnel-schema.sh" mydb 2>&1)"
 rc=$?
 [ $rc -eq 1 ] || { echo "FAIL [skema lama]: exit=$rc, seharusnya 1. Output: $out"; fail=1; }
 printf '%s' "$out" | grep -q "001-claim-lease.sql" || { echo "FAIL [skema lama]: tidak menyebut migrasi 001. Output: $out"; fail=1; }
 printf '%s' "$out" | grep -q "003-response-idempotency.sql" || { echo "FAIL [skema lama]: tidak menyebut migrasi 003. Output: $out"; fail=1; }
 
 # 3. Tanpa argumen -> exit 2
-PATH="$BIN:/usr/bin:/bin" bash "$ROOT/scripts/check-tunnel-schema.sh" >/dev/null 2>&1
+PATH="$BIN:$PATH" bash "$ROOT/scripts/check-tunnel-schema.sh" >/dev/null 2>&1
 [ $? -eq 2 ] || { echo "FAIL [tanpa argumen]: exit harus 2"; fail=1; }
 
 if [ $fail -eq 0 ]; then

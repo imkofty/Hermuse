@@ -87,7 +87,7 @@ dipakai karena di jaringan VM asal WebSocket, QUIC/UDP, dan koneksi
 
 | File | Peran |
 |---|---|
-| `run-hermes.sh` | Menjalankan Hermes CLI via venv provisioned (set `HERMES_HOME`, `no_proxy` minimal). Sesuaikan `HERMES_VENV` / `HERMES_SRC` di atas file. |
+| `run-hermes.sh` | Menjalankan Hermes CLI. Default: meneruskan ke perintah `hermes` standar hasil `scripts/install.sh`. Mode venv opsional: set env `HERMES_VENV` + `HERMES_SRC` (divalidasi di awal; path tidak valid gagal cepat dengan pesan jelas). |
 | `start-gateway.sh` | Menjalankan Telegram gateway detached (`setsid`+`nohup`). |
 | `start-9router.sh` | Supervisor 9Router: bind `127.0.0.1:20128`, auto-restart saat crash. Password dashboard dibaca dari file `.dashboard-pw` (600). |
 | `start-pages-tunnel.sh` | Supervisor tunnel client (`tunnel-client.mjs`), auto-restart. |

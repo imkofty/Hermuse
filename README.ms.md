@@ -89,7 +89,7 @@ QUIC/UDP, dan `cloudflared` ke edge semuanya gagal — lihat
 
 | Fail | Peranan |
 |---|---|
-| `run-hermes.sh` | Menjalankan Hermes CLI melalui venv yang diperuntukkan (menetapkan `HERMES_HOME`, `no_proxy` yang minimum). Laraskan `HERMES_VENV` / `HERMES_SRC` di bahagian atas fail. |
+| `run-hermes.sh` | Menjalankan Hermes CLI. Lalai: memajukan ke perintah `hermes` standard yang dipasang oleh `scripts/install.sh`. Mod venv pilihan: tetapkan env `HERMES_VENV` + `HERMES_SRC` (disahkan pada awal; laluan tidak sah gagal pantas dengan mesej yang jelas). |
 | `start-gateway.sh` | Menjalankan gateway Telegram secara detached (`setsid`+`nohup`). |
 | `start-9router.sh` | Supervisor 9Router: bind `127.0.0.1:20128`, mula semula automatik jika crash. Kata laluan papan pemuka dibaca dari `.dashboard-pw` (600). |
 | `start-pages-tunnel.sh` | Supervisor tunnel client (`tunnel-client.mjs`), mula semula automatik. |

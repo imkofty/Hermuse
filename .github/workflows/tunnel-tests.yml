@@ -6,7 +6,7 @@ name: tunnel-tests
 # Plus cek sintaks semua shell script di repo.
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
 
 jobs:
@@ -19,6 +19,12 @@ jobs:
           node-version: "24"
       - name: Run tunnel test suite
         run: node --test tests/*.test.mjs
+      - name: Launcher fresh-clone smoke test
+        run: bash tests/launcher-smoke.sh
+      - name: Watchdog recovery test
+        run: bash tests/watchdog.test.sh
+      - name: Installer pinned-version test
+        run: bash tests/installer-version.test.sh
       - name: Shell syntax check
         run: |
           for f in *.sh scripts/*.sh lib/*.sh; do bash -n "$f"; done

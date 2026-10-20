@@ -87,7 +87,7 @@ connections to the edge all failed — see the
 
 | File | Role |
 |---|---|
-| `run-hermes.sh` | Runs the Hermes CLI via a provisioned venv (sets `HERMES_HOME`, minimal `no_proxy`). Adjust `HERMES_VENV` / `HERMES_SRC` at the top of the file. |
+| `run-hermes.sh` | Runs the Hermes CLI. Default: forwards to the standard `hermes` command installed by `scripts/install.sh`. Optional venv mode: set `HERMES_VENV` + `HERMES_SRC` env vars (validated up front; invalid paths fail fast with a clear message). |
 | `start-gateway.sh` | Runs the Telegram gateway detached (`setsid`+`nohup`). |
 | `start-9router.sh` | 9Router supervisor: binds `127.0.0.1:20128`, auto-restarts on crash. Dashboard password is read from `.dashboard-pw` (600). |
 | `start-pages-tunnel.sh` | Tunnel client supervisor (`tunnel-client.mjs`), auto-restart. |

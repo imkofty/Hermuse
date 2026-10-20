@@ -247,6 +247,13 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <pages-project-name>
 - If your Telegram bot token leaks: `/revoke` in @BotFather, replace it in
   `.env`, restart the gateway.
 - **Rotating credentials?** Follow the step-by-step [credential rotation guide](docs/key-rotation.md) (tunnel key, dashboard password, bot token).
+- **Tunnel auth fails closed.** The Pages functions reject every poll/respond
+  call unless `TUNNEL_KEY` is set as a Pages secret AND matches the client's
+  key — an unset secret no longer silently means "open tunnel".
+- **Upgrading an existing tunnel database?** Run the one-time migration so
+  the atomic claim columns exist:
+  `wrangler d1 execute <db-name> --remote --file=tunnel/migrations/001-claim-lease.sql`
+  Fresh installs don't need it (schema.sql already includes the columns).
 
 ## Notes
 

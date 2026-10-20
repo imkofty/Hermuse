@@ -246,6 +246,13 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <nama-pages-project>
 - Kalau token bot Telegram bocor: `/revoke` di @BotFather, ganti di `.env`,
   restart gateway.
 - **Mau rotasi kredensial?** Ikuti [panduan rotasi kredensial](docs/key-rotation.id.md) langkah-demi-langkah (tunnel key, password dashboard, token bot).
+- **Auth tunnel fail-closed.** Fungsi Pages menolak semua panggilan poll/respond
+  kecuali `TUNNEL_KEY` ter-set sebagai Pages secret DAN cocok dengan key
+  client — secret kosong tidak lagi berarti "tunnel terbuka".
+- **Upgrade database tunnel yang sudah ada?** Jalankan migrasi sekali ini agar
+  kolom klaim atomik tersedia:
+  `wrangler d1 execute <db-name> --remote --file=tunnel/migrations/001-claim-lease.sql`
+  Instalasi baru tidak memerlukannya (schema.sql sudah memuat kolomnya).
 
 ## Catatan
 

@@ -25,8 +25,11 @@ Run these in order. After each step, verify it before moving on (the
 2. Model login: `hermes setup --portal` — **this IS the model-login step**
    (OAuth via the Nous portal in the browser). To use a different provider
    instead, run `hermes model` and pick one.
-3. The user creates a Telegram bot via @BotFather themselves — ask the user
-   for the bot token (see "Ask the user" below). You cannot do this step.
+3. The user creates a Telegram bot via @BotFather themselves. Prefer the
+   user typing the token straight into the local `.env` file themselves
+   (chmod 600) so it never travels through chat logs. If the token is
+   handed over via chat anyway: write it to `.env` immediately, never
+   echo it back, never log or commit it.
 4. `hermes gateway setup` — needs the bot token and the user's numeric
    Telegram ID (ask the user for both).
 5. `bash scripts/setup-tunnel.sh <pages-project-name> <d1-name>` — provisions
@@ -50,6 +53,8 @@ Run these in order. After each step, verify it before moving on (the
 Ask the user via chat for each of the following. Do not invent, default, or
 reuse values from elsewhere:
 1. Telegram bot token (from @BotFather — the user creates the bot).
+   Preferred: the user enters it into the local `.env` themselves. If it
+   arrives via chat, store it immediately and never repeat it back.
 2. The user's numeric Telegram ID (gateway allowlist is default-deny).
 3. Cloudflare Pages project name for the tunnel.
 4. Cloudflare D1 database name for the tunnel.

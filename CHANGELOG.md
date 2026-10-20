@@ -9,6 +9,19 @@ Semua perubahan penting di repo ini dicatat di sini, format ala Keep a Changelog
 
 ## [Unreleased]
 
+### Keamanan (audit menyeluruh 2026-10-20)
+- **Tunnel auth FAIL-CLOSED** (`functions/__tunnel/poll.js`, `respond.js`): `TUNNEL_KEY` yang tidak ter-set di server kini menolak SEMUA request. Sebelumnya cek `key !== env.TUNNEL_KEY` lolos bila key request dan secret server sama-sama kosong — tunnel tanpa secret berarti terbuka.
+- **Klaim antrean ATOMIK + lease** (`poll.js`, `schema.sql`, `migrations/001-claim-lease.sql`): klaim kini satu statement `UPDATE ... RETURNING` dengan `claim_token` + `claimed_at`. Menghilangkan race double-processing (dua poller menerima request yang sama) dan request yatim (klaim basi >45 dtk direbut kembali ke pending). `respond.js` hanya menerima respons dari pemegang klaim yang sah (token cocok), selain itu 409.
+- **tunnel-client.mjs**: redirect backend tidak lagi diikuti (`redirect: "manual"` — respons 3xx diteruskan apa adanya, menutup jalur belok ke port/host lain); semua fetch ber-timeout eksplisit; respons backend dibaca streaming dengan batas 32 MB (dulu `arrayBuffer()` tanpa batas); `TUNNEL_LOCAL` wajib loopback kecuali opt-in `TUNNEL_ALLOW_REMOTE_LOCAL=1`; body request di ingress dibatasi 6 MB (lebih dari itu 413).
+- **Test suite tunnel** (`tests/`, workflow CI `tunnel-tests.yml`): fungsi Pages ASLI dijalankan melawan SQLite sungguhan — regresi fail-closed, klaim atomik dua poller, lease/reclaim, round trip penuh, dan batas body. Plus cek sintaks shell & kelengkapan i18n di CI yang sama.
+- `AGENTS.md`: token bot Telegram sebaiknya dimasukkan user langsung ke `.env` lokal, bukan lewat chat; bila terpaksa lewat chat, tulis segera dan jangan pernah di-echo.
+
+### Diperbaiki (audit 2026-10-20)
+- **`run-hermes.sh` ditulis ulang**: mode default kini memakai perintah `hermes` standar hasil installer. Mode venv menjadi opt-in eksplisit (`HERMES_VENV` + `HERMES_SRC`, keduanya di-export — dulu `HERMES_SRC` tidak pernah di-export sehingga Python `KeyError`, dan path default masih berisi placeholder `<INSTALL_ID>`/`<ENV_ID>`). Path invalid kini gagal cepat dengan pesan jelas.
+- `scripts/install.sh`: versi 9Router & Wrangler di-pin (bisa dioverride/di-rollback via `HERMUSE_9ROUTER_VERSION` / `HERMUSE_WRANGLER_VERSION`); Wrangler kini dipasang oleh installer (prasyarat `setup-tunnel.sh` yang dulu tidak dijamin ada).
+- `watchdog.sh`: cek kesehatan 9Router kini memvalidasi KODE STATUS HTTP dashboard (200/3xx = sehat) — `curl` polos exit 0 juga pada respons error sehingga 9Router setengah mati dulu terlihat sehat.
+- `scripts/setup-tunnel-cloudflared.sh`: contoh systemd kini memakai path binary cloudflared yang benar-benar terpasang (`command -v`), bukan selalu mengasumsikan `~/.local/bin`.
+
 ### Ditambahkan
 - `scripts/check-i18n.sh` + workflow CI `.github/workflows/i18n.yml` — setiap key yang dipakai via `t()` wajib punya terjemahan lengkap di ketiga bahasa (en/id/ms); build gagal kalau ada key yang hilang, key yang didefinisikan tapi tak dipakai hanya jadi warning.
 - `scripts/setup-tunnel-cloudflared.sh` — setup Cloudflare Tunnel (cloudflared) untuk JARINGAN NORMAL: install binary bila belum ada, tunnel login/create, tulis config, route DNS CNAME `<hostname>` -> `<tunnel-id>.cfargotunnel.com`, plus instruksi run (foreground + contoh systemd). Bukan untuk sandbox/VM asal (cloudflared diblokir di sana — lihat docs/arsip-tunnel-gagal.md).

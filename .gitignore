@@ -15,6 +15,9 @@ tunnel/pages-tunnel/wrangler.toml   # hasil generate (berisi D1 id asli); pakai 
 *.log
 logs/
 
+# Runtime lock (watchdog.sh)
+.watchdog.lock
+
 # Data runtime Hermes / 9Router
 .hermes/
 9router-data/

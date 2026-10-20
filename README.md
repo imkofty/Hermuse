@@ -87,7 +87,7 @@ connections to the edge all failed — see the
 
 | File | Role |
 |---|---|
-| `run-hermes.sh` | Runs the Hermes CLI via a provisioned venv (sets `HERMES_HOME`, minimal `no_proxy`). Adjust `HERMES_VENV` / `HERMES_SRC` at the top of the file. |
+| `run-hermes.sh` | Runs the Hermes CLI. Default: forwards to the standard `hermes` command installed by `scripts/install.sh`. Optional venv mode: set `HERMES_VENV` + `HERMES_SRC` env vars (validated up front; invalid paths fail fast with a clear message). |
 | `start-gateway.sh` | Runs the Telegram gateway detached (`setsid`+`nohup`). |
 | `start-9router.sh` | 9Router supervisor: binds `127.0.0.1:20128`, auto-restarts on crash. Dashboard password is read from `.dashboard-pw` (600). |
 | `start-pages-tunnel.sh` | Tunnel client supervisor (`tunnel-client.mjs`), auto-restart. |
@@ -240,13 +240,44 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <pages-project-name>
 - Telegram gateway: **default-deny**. Only numeric IDs in
   `TELEGRAM_ALLOWED_USERS` can use the bot (`TELEGRAM_BOT_TOKEN` +
   `TELEGRAM_ALLOWED_USERS` live in `.env`).
-- **Change the 9Router dashboard password from the default** right after
-  install — especially since the tunnel URL is public.
+- **9Router dashboard password:** `scripts/setup-tunnel.sh` generates
+  `.dashboard-pw` (600) for you, and `start-9router.sh` refuses to boot
+  while a public tunnel is configured if that file is missing or empty.
+  Change its contents if you want a password of your own.
 - Don't expose port 20128 to the internet unprotected; 9Router binds to
   `127.0.0.1` only.
 - If your Telegram bot token leaks: `/revoke` in @BotFather, replace it in
   `.env`, restart the gateway.
 - **Rotating credentials?** Follow the step-by-step [credential rotation guide](docs/key-rotation.md) (tunnel key, dashboard password, bot token).
+- **Tunnel auth fails closed.** The Pages functions reject every poll/respond
+  call unless `TUNNEL_KEY` is set as a Pages secret AND matches the client's
+  key — an unset secret no longer silently means "open tunnel".
+- **Upgrading an existing tunnel database?** Run the one-time migrations
+  **in order** — old databases need all four, not just the first:
+  `wrangler d1 execute <db-name> --remote --file=tunnel/migrations/001-claim-lease.sql`
+  then `002-idempotency-ratelimit.sql`, then `003-response-idempotency.sql`,
+  then `004-idempotency-principal.sql`
+  (same command, different `--file`). Fresh installs don't need them
+  (schema.sql already includes everything), and re-running
+  `scripts/setup-tunnel.sh` applies them for you. Verify afterwards with
+  `bash scripts/check-tunnel-schema.sh <db-name>` — it prints the exact
+  fix command for anything still missing.
+- **Payloads are capped at what D1 can store.** D1 limits one
+  string/BLOB/row to 2,000,000 bytes and bodies travel as Base64, so the
+  tunnel accepts request/response bodies up to 1,350,000 raw bytes
+  (1,800,000 Base64 chars); larger payloads get a clear 413 instead of a
+  failed database insert.
+- **Idempotency is bound to the caller.** A stored response is replayed
+  only when the idempotency key, the caller's credential, and the exact
+  request payload all match. Reusing a key with a different payload gets
+  a 409 Conflict; another caller's response is never replayed to you.
+- **Watchdog health checks traverse the real tunnel.** With a
+  `.health-key` file (created by `scripts/setup-tunnel.sh`), the watchdog
+  and doctor verify the public tunnel end-to-end with an authenticated
+  nonce probe answered by the local client — an edge 401/403 alone no
+  longer counts as "healthy". If `.tunnel-url` exists but `.health-key`
+  is missing or empty, the watchdog logs a hard ERROR and fails the
+  tunnel check instead of silently skipping the probe.
 
 ## Notes
 

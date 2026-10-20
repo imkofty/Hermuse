@@ -94,6 +94,11 @@ fi
 
 log "$(t cf_done "$HOSTNAME")"
 
+# Path binary cloudflared yang SEBENARNYA dipakai contoh systemd di bawah:
+# bila cloudflared sudah terpasang dari sumber lain (mis. /usr/local/bin),
+# ExecStart harus menunjuk ke sana — bukan selalu ke $BIN_DIR.
+CLOUDFLARED_BIN="$(command -v cloudflared || echo "$BIN_DIR/cloudflared")"
+
 cat << EOF
 
 ============================================================
@@ -107,7 +112,7 @@ cat << EOF
    Description=Hermuse cloudflared tunnel
    After=network-online.target
    [Service]
-   ExecStart=$BIN_DIR/cloudflared tunnel --config $CONFIG run
+   ExecStart=$CLOUDFLARED_BIN tunnel --config $CONFIG run
    Restart=always
    [Install]
    WantedBy=default.target

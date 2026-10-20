@@ -47,9 +47,14 @@ else
   warn "$(t tunnel_d1_exists "$DB_NAME")"
 fi
 
-# --- 3. Terapkan skema ---
-log "$(t tunnel_apply_schema)"
-wrangler d1 execute "$DB_NAME" --remote --file="$TUNNEL_DIR/schema.sql"
+# --- 3. Terapkan skema + migrasi berversi (ledger) ---
+# Seluruh logika ada di scripts/tunnel-migrate.sh: schema.sql, lalu
+# migrasi 001 -> 004 BERURUTAN yang belum tercatat di ledger
+# schema_migrations, lalu PREFLIGHT skema wajib. Pendekatan lama
+# (migrasi hanya jalan bila schema.sql gagal) terbukti melewatkan
+# migrasi 004 pada database versi 003 — schema.sql di sana SUKSES
+# sebagai no-op — jadi kegagalan runner di sini menggagalkan setup.
+bash "$SCRIPT_DIR/tunnel-migrate.sh" "$DB_NAME" || die "$(t tunnel_schema_incomplete)"
 
 # --- 4. Siapkan wrangler.toml dari template ---
 DB_ID="$(wrangler d1 list 2>/dev/null | grep -A1 "$DB_NAME" | grep -oE '[0-9a-f-]{36}' | head -1)"
@@ -69,12 +74,59 @@ wrangler pages project create "$PROJECT" --production-branch=main 2>/dev/null \
 log "$(t tunnel_set_secret)"
 printf '%s' "$TUNNEL_KEY" | wrangler pages secret put TUNNEL_KEY --project-name="$PROJECT"
 
+# --- 6b. Health key: kunci probe kesehatan watchdog (file 600 di root
+# repo, sejajar .tunnel-url; TIDAK pernah di-commit — lihat .gitignore).
+# Server menolak probe tanpa kunci ini (fail-closed), dan watchdog
+# hanya menganggap tunnel sehat bila probe ini dijawab client lokal.
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+HEALTH_KEY_FILE="$REPO_ROOT/.health-key"
+if [ -f "$HEALTH_KEY_FILE" ]; then
+  warn "$(t tunnel_health_key_exists "$HEALTH_KEY_FILE")"
+else
+  log "$(t tunnel_gen_health_key)"
+  openssl rand -hex 32 > "$HEALTH_KEY_FILE"
+  chmod 600 "$HEALTH_KEY_FILE"
+fi
+printf '%s' "$(cat "$HEALTH_KEY_FILE")" | wrangler pages secret put HEALTH_KEY --project-name="$PROJECT"
+
+# --- 6c. Gate dashboard: default FAIL-CLOSED untuk deployment publik.
+# Password gate dibuatkan, disimpan 600 di root repo (.gate-pw), dan
+# dipasang sebagai Pages secret GATE_PASSWORD + REQUIRE_GATE=1 —
+# tanpa ini, siapa pun yang tahu URL tunnel bisa membuka dashboard.
+# Opt-out sadar risiko: SETUP_NO_GATE=1 (dengan peringatan keras).
+GATE_PW_FILE="$REPO_ROOT/.gate-pw"
+if [ "${SETUP_NO_GATE:-}" = "1" ]; then
+  warn "$(t tunnel_gate_skipped)"
+else
+  if [ ! -f "$GATE_PW_FILE" ]; then
+    log "$(t tunnel_gen_gate_pw)"
+    openssl rand -hex 16 > "$GATE_PW_FILE"
+    chmod 600 "$GATE_PW_FILE"
+  fi
+  printf '%s' "$(cat "$GATE_PW_FILE")" | wrangler pages secret put GATE_PASSWORD --project-name="$PROJECT"
+  printf '1' | wrangler pages secret put REQUIRE_GATE --project-name="$PROJECT"
+  log "$(t tunnel_gate_pw_file "$GATE_PW_FILE")"
+fi
+
+# --- 6d. Password dashboard 9Router (.dashboard-pw di root repo, 600,
+# TIDAK pernah di-commit — lihat .gitignore). start-9router.sh MENOLAK
+# boot bila .tunnel-url ada tapi .dashboard-pw tidak ada/kosong
+# (fail-closed putaran 3+4), jadi setup WAJIB memprovision-nya —
+# sebelum ini instalasi bersih macet persis di langkah itu. Pola sama
+# seperti .gate-pw: generate acak kuat hanya bila belum ada isinya;
+# file yang sudah berisi TIDAK pernah ditimpa.
+DASH_PW_FILE="$REPO_ROOT/.dashboard-pw"
+if [ ! -s "$DASH_PW_FILE" ]; then
+  log "$(t tunnel_gen_dashboard_pw)"
+  openssl rand -hex 16 > "$DASH_PW_FILE"
+  chmod 600 "$DASH_PW_FILE"
+fi
+
 # --- 7. Deploy Pages Functions ---
 log "$(t tunnel_deploy)"
 (cd "$PAGES_DIR" && wrangler pages deploy . --project-name="$PROJECT")
 
 BASE_URL="https://${PROJECT}.pages.dev"
-REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 log "$(t tunnel_done "$BASE_URL")"
 
 cat << EOF
@@ -89,6 +141,11 @@ cat << EOF
      (atau manual: TUNNEL_BASE_URL=$BASE_URL TUNNEL_KEY_FILE=$KEY_FILE node tunnel-client.mjs)
   4. Jalankan gateway Telegram: bash start-gateway.sh
   5. Pasang watchdog di cron: */5 * * * * $REPO_ROOT/watchdog.sh
-  6. PENTING: ganti password dashboard 9Router dari default!
+     (probe kesehatannya memakai .health-key yang dibuat setup ini)
+  6. Dashboard publik ter-gate password: kata sandinya di $GATE_PW_FILE
+     (user Basic auth default: hermuse). Ganti dari file itu bila perlu.
+  7. Password dashboard 9Router dibuatkan di $DASH_PW_FILE (chmod 600) —
+     dibaca start-9router.sh; tanpa file ini 9Router menolak jalan
+     selama .tunnel-url ada. Ganti isinya bila ingin password sendiri.
 ============================================================
 EOF

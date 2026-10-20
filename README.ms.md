@@ -89,7 +89,7 @@ QUIC/UDP, dan `cloudflared` ke edge semuanya gagal — lihat
 
 | Fail | Peranan |
 |---|---|
-| `run-hermes.sh` | Menjalankan Hermes CLI melalui venv yang diperuntukkan (menetapkan `HERMES_HOME`, `no_proxy` yang minimum). Laraskan `HERMES_VENV` / `HERMES_SRC` di bahagian atas fail. |
+| `run-hermes.sh` | Menjalankan Hermes CLI. Lalai: memajukan ke perintah `hermes` standard yang dipasang oleh `scripts/install.sh`. Mod venv pilihan: tetapkan env `HERMES_VENV` + `HERMES_SRC` (disahkan pada awal; laluan tidak sah gagal pantas dengan mesej yang jelas). |
 | `start-gateway.sh` | Menjalankan gateway Telegram secara detached (`setsid`+`nohup`). |
 | `start-9router.sh` | Supervisor 9Router: bind `127.0.0.1:20128`, mula semula automatik jika crash. Kata laluan papan pemuka dibaca dari `.dashboard-pw` (600). |
 | `start-pages-tunnel.sh` | Supervisor tunnel client (`tunnel-client.mjs`), mula semula automatik. |
@@ -245,13 +245,47 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <nama-projek-pages> 
 - Gateway Telegram: **default-deny**. Hanya ID numerik dalam
   `TELEGRAM_ALLOWED_USERS` boleh menggunakan bot (`TELEGRAM_BOT_TOKEN` +
   `TELEGRAM_ALLOWED_USERS` berada dalam `.env`).
-- **Tukar kata laluan papan pemuka 9Router daripada yang lalai** sejurus
-  selepas pasang — terutamanya kerana URL tunnel adalah awam.
+- **Kata laluan papan pemuka 9Router:** `scripts/setup-tunnel.sh`
+  mencipta `.dashboard-pw` (600) untuk anda, dan `start-9router.sh`
+  menolak untuk bermula selagi tunnel awam dikonfigurasikan jika fail
+  itu tiada atau kosong. Tukar kandungannya jika anda mahu kata laluan
+  sendiri.
 - Jangan dedahkan port 20128 ke internet tanpa perlindungan; 9Router hanya
   bind pada `127.0.0.1`.
 - Jika token bot Telegram anda bocor: `/revoke` di @BotFather, gantikannya
   dalam `.env`, mulakan semula gateway.
 - **Mahu putar kredensial?** Ikuti [panduan putaran kredensial](docs/key-rotation.ms.md) langkah-demi-langkah (tunnel key, kata laluan dashboard, token bot).
+- **Auth tunnel fail-closed.** Fungsi Pages menolak semua panggilan poll/respond
+  melainkan `TUNNEL_KEY` ditetapkan sebagai Pages secret DAN sepadan dengan
+  key client — secret kosong tidak lagi bermakna "tunnel terbuka".
+- **Naik taraf pangkalan data tunnel sedia ada?** Jalankan migrasi sekali
+  jalan ini **mengikut urutan** — pangkalan data lama memerlukan keempat-empatnya,
+  bukan yang pertama sahaja:
+  `wrangler d1 execute <db-name> --remote --file=tunnel/migrations/001-claim-lease.sql`
+  kemudian `002-idempotency-ratelimit.sql`, kemudian `003-response-idempotency.sql`,
+  kemudian `004-idempotency-principal.sql`
+  (arahan sama, `--file` berbeza). Pemasangan baharu tidak memerlukannya
+  (schema.sql sudah memuat semuanya), dan menjalankan semula
+  `scripts/setup-tunnel.sh` menggunakannya untuk anda. Sahkan selepas itu
+  dengan `bash scripts/check-tunnel-schema.sh <db-name>` — skrip tersebut
+  mencetak arahan pembaikan yang tepat untuk apa yang masih kurang.
+- **Muatan dihadkan mengikut muatan simpan D1.** D1 menghadkan satu
+  string/BLOB/baris kepada 2,000,000 bait dan badan bergerak sebagai
+  Base64, jadi tunnel menerima badan permintaan/respons sehingga
+  1,350,000 bait mentah (1,800,000 aksara Base64); muatan lebih besar
+  menerima 413 yang jelas, bukan sisipan pangkalan data yang gagal.
+- **Idempotency terikat kepada pemanggil.** Respons yang tersimpan
+  hanya dilayan semula jika key idempotency, kredensial pemanggil, dan
+  muatan permintaan tepat semuanya sepadan. Key yang sama dengan muatan
+  berbeza menerima 409 Conflict; respons pemanggil lain tidak pernah
+  dilayan kepada anda.
+- **Semakan kesihatan watchdog melalui tunnel sebenar.** Dengan fail
+  `.health-key` (dicipta `scripts/setup-tunnel.sh`), watchdog dan doctor
+  mengesahkan tunnel awam dari hujung ke hujung menggunakan prob nonce
+  yang dijawab client setempat — 401/403 daripada edge sahaja tidak
+  lagi dikira "sihat". Jika `.tunnel-url` wujud tetapi `.health-key`
+  tiada atau kosong, watchdog menulis ERROR keras dan menyatakan
+  semakan tunnel GAGAL, bukan melangkau prob secara senyap.
 
 ## Nota
 

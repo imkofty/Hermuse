@@ -14,6 +14,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 log() { printf '\033[1;32m[install]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[install]\033[0m %s\n' "$*" >&2; }
 
+# --- Versi dependensi (di-pin agar instalasi bisa direproduksi) ---
+# Naikkan versi lewat env var, mis. HERMUSE_9ROUTER_VERSION=0.6.0 bash scripts/install.sh
+# Rollback = jalankan ulang installer dengan versi lama di env var yang sama.
+NINE_ROUTER_VERSION="${HERMUSE_9ROUTER_VERSION:-0.5.104}"
+WRANGLER_VERSION="${HERMUSE_WRANGLER_VERSION:-4.151.2}"
+
 # --- 1. Cek OS ---
 if ! command -v apt-get >/dev/null 2>&1; then
   warn "$(t install_debian_only)"
@@ -60,20 +66,45 @@ else
   log "$(t install_have_hermes "$(hermes --version 2>/dev/null || echo '?')")"
 fi
 
-# --- 5. 9Router (paket npm) ---
-# Install ke $HOME/.npm-global agar konsisten dengan PATH di script lain
-# (start-9router.sh, start-pages-tunnel.sh) dan tetap aman tanpa akses root.
-if ! command -v 9router >/dev/null 2>&1; then
-  log "$(t install_9router)"
+# --- 5/5b. Paket npm ter-pin (9Router + Wrangler) ---
+# Versi yang TERPASANG diverifikasi terhadap pin — bukan sekadar
+# "perintahnya ada di PATH". Beda versi (lebih lama ATAU lebih baru)
+# -> pasang ulang persis versi pin: upgrade & downgrade lewat jalur yang
+# sama, lalu hasil akhir dicek ulang; tidak cocok = installer gagal
+# dengan pesan jelas (bukan diam-diam jalan dengan versi yang salah).
+# Wrangler dipasang di sini juga: prasyarat scripts/setup-tunnel.sh yang
+# dulu tidak dijamin keberadaannya.
+pkg_version() { # $1 = nama paket di prefix $HOME/.npm-global
+  local f="$HOME/.npm-global/lib/node_modules/$1/package.json"
+  [ -f "$f" ] || return 0
+  node -e 'console.log(require(process.argv[1]).version)' "$f" 2>/dev/null || true
+}
+ensure_pkg() { # $1 = paket, $2 = versi pin
+  local name="$1" want="$2" have=""
+  have="$(pkg_version "$name")"
+  if [ "$have" = "$want" ]; then
+    log "$(t install_version_ok "$name" "$have")"
+    return 0
+  fi
+  if [ -n "$have" ]; then
+    log "$(t install_align_version "$name" "$have" "$want")"
+  else
+    log "$(t install_pkg_fresh "$name" "$want")"
+  fi
   mkdir -p "$HOME/.npm-global"
-  npm install -g --prefix "$HOME/.npm-global" 9router
+  npm install -g --prefix "$HOME/.npm-global" "$name@$want"
   export PATH="$HOME/.npm-global/bin:$PATH"
-  # pastikan persisten untuk shell berikutnya
   grep -q '.npm-global/bin' ~/.bashrc 2>/dev/null || \
     echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc
-else
-  log "$(t install_have_9router "$(9router --version 2>/dev/null || echo '?')")"
-fi
+  have="$(pkg_version "$name")"
+  if [ "$have" != "$want" ]; then
+    warn "$(t install_version_bad "$name" "${have:-none}" "$want")"
+    exit 1
+  fi
+  log "$(t install_version_ok "$name" "$have")"
+}
+ensure_pkg "9router" "$NINE_ROUTER_VERSION"
+ensure_pkg "wrangler" "$WRANGLER_VERSION"
 
 # --- 6. Verifikasi ---
 log "$(t install_verify)"

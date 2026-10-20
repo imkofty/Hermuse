@@ -87,7 +87,7 @@ dipakai karena di jaringan VM asal WebSocket, QUIC/UDP, dan koneksi
 
 | File | Peran |
 |---|---|
-| `run-hermes.sh` | Menjalankan Hermes CLI via venv provisioned (set `HERMES_HOME`, `no_proxy` minimal). Sesuaikan `HERMES_VENV` / `HERMES_SRC` di atas file. |
+| `run-hermes.sh` | Menjalankan Hermes CLI. Default: meneruskan ke perintah `hermes` standar hasil `scripts/install.sh`. Mode venv opsional: set env `HERMES_VENV` + `HERMES_SRC` (divalidasi di awal; path tidak valid gagal cepat dengan pesan jelas). |
 | `start-gateway.sh` | Menjalankan Telegram gateway detached (`setsid`+`nohup`). |
 | `start-9router.sh` | Supervisor 9Router: bind `127.0.0.1:20128`, auto-restart saat crash. Password dashboard dibaca dari file `.dashboard-pw` (600). |
 | `start-pages-tunnel.sh` | Supervisor tunnel client (`tunnel-client.mjs`), auto-restart. |
@@ -239,13 +239,45 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <nama-pages-project>
 - Telegram gateway: **default-deny**. Hanya numeric ID di
   `TELEGRAM_ALLOWED_USERS` yang bisa memakai bot (`TELEGRAM_BOT_TOKEN` +
   `TELEGRAM_ALLOWED_USERS` di `.env`).
-- **Ganti password dashboard 9Router dari default** segera setelah install —
-  apalagi URL tunnel-nya publik.
+- **Password dashboard 9Router:** `scripts/setup-tunnel.sh` membuatkan
+  `.dashboard-pw` (600) untukmu, dan `start-9router.sh` menolak jalan
+  selama tunnel publik terkonfigurasi bila file itu tidak ada atau
+  kosong. Ganti isinya bila ingin password sendiri.
 - Jangan expose port 20128 ke internet tanpa proteksi; 9Router di-bind ke
   `127.0.0.1` saja.
 - Kalau token bot Telegram bocor: `/revoke` di @BotFather, ganti di `.env`,
   restart gateway.
 - **Mau rotasi kredensial?** Ikuti [panduan rotasi kredensial](docs/key-rotation.id.md) langkah-demi-langkah (tunnel key, password dashboard, token bot).
+- **Auth tunnel fail-closed.** Fungsi Pages menolak semua panggilan poll/respond
+  kecuali `TUNNEL_KEY` ter-set sebagai Pages secret DAN cocok dengan key
+  client — secret kosong tidak lagi berarti "tunnel terbuka".
+- **Upgrade database tunnel yang sudah ada?** Jalankan migrasi sekali jalan
+  ini **berurutan** — database lama butuh keempatnya, bukan cuma yang pertama:
+  `wrangler d1 execute <db-name> --remote --file=tunnel/migrations/001-claim-lease.sql`
+  lalu `002-idempotency-ratelimit.sql`, lalu `003-response-idempotency.sql`,
+  lalu `004-idempotency-principal.sql`
+  (perintah sama, beda `--file`). Instalasi baru tidak memerlukannya
+  (schema.sql sudah memuat semuanya), dan menjalankan ulang
+  `scripts/setup-tunnel.sh` menerapkannya untukmu. Verifikasi sesudahnya
+  dengan `bash scripts/check-tunnel-schema.sh <db-name>` — skrip itu
+  mencetak perintah perbaikan yang persis untuk yang masih kurang.
+- **Payload dibatasi sesuai kapasitas simpan D1.** D1 membatasi satu
+  string/BLOB/baris pada 2.000.000 byte dan body berjalan sebagai Base64,
+  jadi tunnel menerima body request/respons s/d 1.350.000 byte mentah
+  (1.800.000 karakter Base64); payload lebih besar menerima 413 yang
+  jelas, bukan insert database yang gagal diam-diam.
+- **Idempotency terikat ke pemanggil.** Respons yang tersimpan hanya
+  dilayani ulang bila key idempotency, kredensial pemanggil, dan payload
+  request persis semuanya cocok. Key yang sama dengan payload berbeda
+  menerima 409 Conflict; respons pemanggil lain tidak pernah dilayani
+  ke kamu.
+- **Cek kesehatan watchdog melewati tunnel sungguhan.** Dengan file
+  `.health-key` (dibuat `scripts/setup-tunnel.sh`), watchdog dan doctor
+  memverifikasi tunnel publik ujung-ke-ujung memakai probe nonce
+  terautentikasi yang dijawab client lokal — 401/403 dari edge saja
+  tidak lagi dihitung "sehat". Bila `.tunnel-url` ada tapi `.health-key`
+  tidak ada atau kosong, watchdog menulis ERROR keras dan menyatakan
+  pemeriksaan tunnel GAGAL, bukan melewati probe diam-diam.
 
 ## Catatan
 

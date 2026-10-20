@@ -47,24 +47,14 @@ else
   warn "$(t tunnel_d1_exists "$DB_NAME")"
 fi
 
-# --- 3. Terapkan skema + migrasi berurutan ---
-# Database baru cukup schema.sql (semua CREATE ... IF NOT EXISTS).
-# Database LAMA (dibuat skema versi sebelumnya) membuat schema.sql
-# gagal di statement index yang butuh kolom baru — itu sinyal untuk
-# naik lewat migrasi 001 -> 002 -> 003 -> 004 BERURUTAN, lalu schema.sql
-# dijalankan sekali lagi (kini harus berhasil). ALTER di dalam migrasi
-# yang gagal karena kolom sudah ada ("duplicate column name") aman —
-# berarti migrasi itu sudah pernah diterapkan — jadi kegagalan per
-# migrasi ditoleransi dengan peringatan, BUKAN menggagalkan setup.
-log "$(t tunnel_apply_schema)"
-if ! wrangler d1 execute "$DB_NAME" --remote --file="$TUNNEL_DIR/schema.sql"; then
-  log "$(t tunnel_apply_migrations)"
-  for mig in 001-claim-lease.sql 002-idempotency-ratelimit.sql 003-response-idempotency.sql 004-idempotency-principal.sql; do
-    wrangler d1 execute "$DB_NAME" --remote --file="$TUNNEL_DIR/migrations/$mig" \
-      || warn "migration $mig: sebagian statement dilewati (kemungkinan sudah pernah diterapkan)"
-  done
-  wrangler d1 execute "$DB_NAME" --remote --file="$TUNNEL_DIR/schema.sql"
-fi
+# --- 3. Terapkan skema + migrasi berversi (ledger) ---
+# Seluruh logika ada di scripts/tunnel-migrate.sh: schema.sql, lalu
+# migrasi 001 -> 004 BERURUTAN yang belum tercatat di ledger
+# schema_migrations, lalu PREFLIGHT skema wajib. Pendekatan lama
+# (migrasi hanya jalan bila schema.sql gagal) terbukti melewatkan
+# migrasi 004 pada database versi 003 — schema.sql di sana SUKSES
+# sebagai no-op — jadi kegagalan runner di sini menggagalkan setup.
+bash "$SCRIPT_DIR/tunnel-migrate.sh" "$DB_NAME" || die "$(t tunnel_schema_incomplete)"
 
 # --- 4. Siapkan wrangler.toml dari template ---
 DB_ID="$(wrangler d1 list 2>/dev/null | grep -A1 "$DB_NAME" | grep -oE '[0-9a-f-]{36}' | head -1)"

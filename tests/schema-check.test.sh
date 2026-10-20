@@ -22,6 +22,8 @@ done
 emit() { printf '[{"results":[%s],"success":true}]' "$1"; }
 if [ "${MOCK_SCHEMA:-full}" = "full" ]; then
   case "$cmd" in
+    *pragma_index_info*idx_tunnel_requests_idem*)  emit '{"name":"idempotency_key"},{"name":"idem_principal"}' ;;
+    *pragma_index_info*idx_tunnel_responses_idem*) emit '{"name":"idempotency_key"},{"name":"idem_principal"}' ;;
     *tunnel_requests*)  emit '{"name":"id"},{"name":"claim_token"},{"name":"claimed_at"},{"name":"idempotency_key"},{"name":"idem_principal"},{"name":"idem_fingerprint"}' ;;
     *tunnel_responses*) emit '{"name":"id"},{"name":"idempotency_key"},{"name":"idem_principal"},{"name":"idem_fingerprint"}' ;;
     *sqlite_master*)    emit '{"name":"tunnel_requests"},{"name":"tunnel_responses"},{"name":"tunnel_rate_limits"},{"name":"idx_tunnel_requests_idem"},{"name":"idx_tunnel_responses_idem"}' ;;
@@ -29,6 +31,7 @@ if [ "${MOCK_SCHEMA:-full}" = "full" ]; then
   esac
 else
   case "$cmd" in
+    *pragma_index_info*) emit '{"name":"idempotency_key"}' ;;
     *tunnel_requests*)  emit '{"name":"id"}' ;;
     *tunnel_responses*) emit '{"name":"id"}' ;;
     *sqlite_master*)    emit '{"name":"tunnel_requests"},{"name":"tunnel_responses"}' ;;

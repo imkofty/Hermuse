@@ -11,6 +11,14 @@
 #   bash scripts/check-tunnel-schema.sh <nama-d1>
 # Exit 0 = skema lengkap. Exit 1 = ada yang kurang. Exit 2 = prasyarat
 # (argumen/wrangler/node) tidak terpenuhi.
+#
+# Putaran 5: selain keberadaan nama index, KOLOM kedua index
+# idempotency kini ikut diverifikasi — index harus gabungan
+# (idempotency_key, idem_principal). Database versi 003 punya index
+# bernama sama tapi berkolom tunggal, dan cek nama saja meloloskannya
+# (itulah celah yang membuat migrasi 004 terlewat saat upgrade).
+# Executor SQL sama dengan runner migrasi (scripts/sql-exec.sh):
+# wrangler D1, atau SQLite lokal bila TUNNEL_SQLITE_FILE ter-set.
 set -uo pipefail
 
 DB="${1:-}"
@@ -18,15 +26,21 @@ if [ -z "$DB" ]; then
   echo "usage: bash scripts/check-tunnel-schema.sh <nama-d1>" >&2
   exit 2
 fi
-command -v wrangler >/dev/null 2>&1 || { echo "wrangler tidak ditemukan di PATH" >&2; exit 2; }
-command -v node >/dev/null 2>&1 || { echo "node tidak ditemukan di PATH" >&2; exit 2; }
+if [ -n "${TUNNEL_SQLITE_FILE:-}" ]; then
+  command -v python3 >/dev/null 2>&1 || { echo "python3 tidak ditemukan di PATH" >&2; exit 2; }
+else
+  command -v wrangler >/dev/null 2>&1 || { echo "wrangler tidak ditemukan di PATH" >&2; exit 2; }
+  command -v node >/dev/null 2>&1 || { echo "node tidak ditemukan di PATH" >&2; exit 2; }
+fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SQL_DB="$DB"
+# shellcheck source=sql-exec.sh
+. "$ROOT/scripts/sql-exec.sh"
 
 # Ambil daftar nama (kolom/tabel/index) dari satu query, satu per baris.
-names() { # $1 = SQL
-  wrangler d1 execute "$DB" --remote --json --command "$1" 2>/dev/null \
-    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);for(const r of (j[0]?.results||[])) console.log(r.name)}catch{}})'
+names() { # $1 = SQL "SELECT name FROM ..."
+  sql_query "$1"
 }
 
 REQ_COLS="$(names "SELECT name FROM pragma_table_info('tunnel_requests')")"
@@ -54,6 +68,22 @@ need "$RES_COLS" idem_principal           migrations/004-idempotency-principal.s
 need "$RES_COLS" idem_fingerprint         migrations/004-idempotency-principal.sql
 need "$OBJECTS"  idx_tunnel_requests_idem  migrations/002-idempotency-ratelimit.sql
 need "$OBJECTS"  idx_tunnel_responses_idem migrations/003-response-idempotency.sql
+
+# Kolom index idempotency harus GABUNGAN (idempotency_key,
+# idem_principal) — nama index yang sama dengan kolom tunggal adalah
+# sisa versi 002/003 dan TIDAK lolos (putaran 5).
+REQ_IDX_COLS="$(names "SELECT name FROM pragma_index_info('idx_tunnel_requests_idem')")"
+RES_IDX_COLS="$(names "SELECT name FROM pragma_index_info('idx_tunnel_responses_idem')")"
+need_idx() { # $1 = daftar kolom index terurut, $2 = nama index
+  local joined
+  joined="$(printf '%s\n' "$1" | paste -sd, -)"
+  if [ "$joined" != "idempotency_key,idem_principal" ]; then
+    echo "MISSING: $2 belum index gabungan (idempotency_key, idem_principal)  -> jalankan: wrangler d1 execute $DB --remote --file=$ROOT/tunnel/migrations/004-idempotency-principal.sql"
+    missing=1
+  fi
+}
+need_idx "$REQ_IDX_COLS" idx_tunnel_requests_idem
+need_idx "$RES_IDX_COLS" idx_tunnel_responses_idem
 
 if [ "$missing" -eq 0 ]; then
   echo "OK: skema tunnel lengkap (migrasi 001-004 terkonfirmasi) untuk D1 '$DB'."

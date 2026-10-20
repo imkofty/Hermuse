@@ -29,6 +29,8 @@ jobs:
         run: bash tests/schema-check.test.sh
       - name: Tunnel setup provisioning test
         run: bash tests/setup-tunnel.test.sh
+      - name: Tunnel migration upgrade test (DB 003 -> skema lengkap + ledger)
+        run: bash tests/migration-upgrade.test.sh
       - name: Shell syntax check
         run: |
           for f in *.sh scripts/*.sh lib/*.sh; do bash -n "$f"; done

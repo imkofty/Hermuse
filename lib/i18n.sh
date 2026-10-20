@@ -64,6 +64,8 @@ t() {
                 router_pw_warn)      fmt="WARNING: %s is missing or empty — 9Router runs with the default password. Create the file (chmod 600) then restart." ;;
                 router_pw_required_public) fmt="ERROR: %s is missing or empty but a public tunnel is configured (.tunnel-url exists) — refusing to run 9Router with the default dashboard password. Create the file (chmod 600), or remove .tunnel-url for local-only use." ;;
                 tunnel_apply_migrations) fmt="Applying migrations 001-004 in order (harmless on fresh databases)..." ;;
+                tunnel_apply_migration) fmt="Applying migration %s (not yet recorded in schema_migrations)..." ;;
+                tunnel_schema_incomplete) fmt="Tunnel schema is still incomplete after migrations — aborting setup." ;;
                 tunnel_gen_health_key) fmt="Generating tunnel health key..." ;;
                 tunnel_health_key_exists) fmt="Health key already exists: %s (kept)" ;;
                 tunnel_gen_gate_pw)  fmt="Generating dashboard gate password..." ;;
@@ -141,6 +143,8 @@ t() {
                 router_pw_warn)      fmt="AMARAN: %s tiada atau kosong — 9Router berjalan dengan kata laluan lalai. Cipta fail tersebut (chmod 600) kemudian mulakan semula." ;;
                 router_pw_required_public) fmt="RALAT: %s tiada atau kosong tetapi tunnel awam telah dikonfigurasikan (.tunnel-url wujud) — 9Router tidak akan dimulakan dengan kata laluan papan pemuka lalai. Cipta fail tersebut (chmod 600), atau padam .tunnel-url untuk kegunaan setempat sahaja." ;;
                 tunnel_apply_migrations) fmt="Menggunakan migrasi 001-004 mengikut urutan (selamat untuk pangkalan data baharu)..." ;;
+                tunnel_apply_migration) fmt="Menggunakan migrasi %s (belum direkodkan dalam schema_migrations)..." ;;
+                tunnel_schema_incomplete) fmt="Skema tunnel masih belum lengkap selepas migrasi — setup dibatalkan." ;;
                 tunnel_gen_health_key) fmt="Menjana kunci kesihatan tunnel..." ;;
                 tunnel_health_key_exists) fmt="Kunci kesihatan sudah wujud: %s (dikekalkan)" ;;
                 tunnel_gen_gate_pw)  fmt="Menjana kata laluan get papan pemuka..." ;;
@@ -218,6 +222,8 @@ t() {
                 router_pw_warn)      fmt="PERINGATAN: %s tidak ada atau kosong — 9Router jalan dengan password default. Buat file-nya (chmod 600) lalu restart." ;;
                 router_pw_required_public) fmt="ERROR: %s tidak ada atau kosong tapi tunnel publik terkonfigurasi (.tunnel-url ada) — menolak menjalankan 9Router dengan password dashboard default. Buat file-nya (chmod 600), atau hapus .tunnel-url untuk pemakaian lokal saja." ;;
                 tunnel_apply_migrations) fmt="Menerapkan migrasi 001-004 berurutan (aman untuk database baru)..." ;;
+                tunnel_apply_migration) fmt="Menjalankan migrasi %s (belum tercatat di schema_migrations)..." ;;
+                tunnel_schema_incomplete) fmt="Skema tunnel masih belum lengkap setelah migrasi — setup dibatalkan." ;;
                 tunnel_gen_health_key) fmt="Membuat kunci kesehatan tunnel..." ;;
                 tunnel_health_key_exists) fmt="Kunci kesehatan sudah ada: %s (dipertahankan)" ;;
                 tunnel_gen_gate_pw)  fmt="Membuat password gate dashboard..." ;;

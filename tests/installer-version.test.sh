@@ -29,7 +29,10 @@ printf '{"name":"%s","version":"%s"}\n' "$pkg" "$ver" > "$d/package.json"
 echo "npm-stub installed $pkg@$ver"
 EOF
 chmod +x "$TMP/bin/npm"
-export PATH="$TMP/bin:/usr/bin:/bin"
+# PATH: stub npm PALING DEPAN, tapi PATH asli dipertahankan — node di CI
+# tinggal di toolcache setup-node, bukan /usr/bin; membuang PATH asli
+# membuat pkg_version gagal diam-diam (node tidak ditemukan).
+export PATH="$TMP/bin:$PATH"
 
 # Ekstrak definisi fungsi asli dari installer (antara pkg_version() dan
 # panggilan ensure_pkg pertama), lengkapi dengan log/warn + i18n asli.

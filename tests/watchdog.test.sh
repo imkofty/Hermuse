@@ -12,6 +12,11 @@
 #   8. Probe menjawab tapi backend mati -> restart-9router, BUKAN tunnel.
 #   9. Edge menjawab 401 (gate) tapi probe tak terjawab -> restart-tunnel
 #      (regresi putaran 3: 401 dari edge BUKAN bukti tunnel sehat).
+#  10. Deployment publik (.tunnel-url ada) tapi .health-key HILANG ->
+#      pemeriksaan tunnel GAGAL: baris ERROR keras di watchdog.log,
+#      BUKAN lolos diam-diam (dan bukan restart — restart tak memperbaiki
+#      konfigurasi). Regresi putaran 4.
+#  11. Sama seperti 10 tapi .health-key ada namun KOSONG -> ERROR juga.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
@@ -119,6 +124,24 @@ expect_calls "probe backend mati" "restart-9router.sh"
 # 9. Edge menjawab 401 (gate aktif) tapi probe tak sampai client -> restart tunnel
 MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=alive MOCK_GW_PROC=alive MOCK_HEALTH=gate401 run_watchdog
 expect_calls "gate 401 bukan sehat" "restart-tunnel.sh"
+rm -f "$APP/.tunnel-url" "$APP/.health-key"
+
+# 10. .tunnel-url ada, .health-key HILANG -> ERROR keras di log, tanpa restart
+echo "https://tunnel.example" > "$APP/.tunnel-url"
+MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=alive MOCK_GW_PROC=alive run_watchdog
+expect_calls "health-key hilang: tanpa restart" ""
+grep -q "watchdog ERROR: .health-key hilang/kosong" "$APP/watchdog.log" || { echo "FAIL [health-key hilang]: baris ERROR tidak ada di watchdog.log"; fail=1; }
+
+# 11. .health-key ada tapi KOSONG -> ERROR juga
+printf '' > "$APP/.health-key"
+MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=alive MOCK_GW_PROC=alive run_watchdog
+expect_calls "health-key kosong: tanpa restart" ""
+grep -q "watchdog ERROR: .health-key hilang/kosong" "$APP/watchdog.log" || { echo "FAIL [health-key kosong]: baris ERROR tidak ada di watchdog.log"; fail=1; }
+
+# Proses tunnel mati tetap di-restart walau .health-key hilang
+# (kegagalan konfigurasi tidak memblokir pemulihan proses).
+MOCK_LOCAL_CODE=200 MOCK_TUNNEL_PROC=dead MOCK_GW_PROC=alive run_watchdog
+expect_calls "health-key hilang + proses mati" "restart-tunnel.sh"
 rm -f "$APP/.tunnel-url" "$APP/.health-key"
 
 # 6. Kunci dipegang proses lain -> keluar cepat, nol restart

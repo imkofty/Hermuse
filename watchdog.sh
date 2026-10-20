@@ -51,15 +51,25 @@ fi
 #     atau mati di tengah: restart tunnel.
 # Kode 401/403 dari edge TIDAK lagi dianggap sehat (perbaikan putaran 3):
 # dengan gate aktif, ingress menjawab 401 SEBELUM request masuk antrean,
-# jadi 401 hanya membuktikan edge hidup — bukan tunnel. Tanpa
-# .health-key (instalasi lama) probe dilewati; buat file-nya dengan
-# scripts/setup-tunnel.sh atau manual (lihat README, bagian upgrade).
+# jadi 401 hanya membuktikan edge hidup — bukan tunnel.
+# Putaran 4: .tunnel-url ADA tapi .health-key HILANG/KOSONG bukan lagi
+# "probe dilewati diam-diam" — itu konfigurasi TIDAK SEHAT pada
+# deployment publik: pemeriksaan tunnel dinyatakan GAGAL dengan baris
+# ERROR keras di watchdog.log setiap run, sampai file-nya dibuat
+# (scripts/setup-tunnel.sh atau manual — lihat README, bagian upgrade).
+# Sehat diam-diam tanpa probe pada deployment publik tidak boleh terjadi
+# lagi. (Restart proses mati di langkah 2 di atas tidak terpengaruh:
+# yang gagal di sini adalah KONFIGURASI, dan restart tidak
+# memperbaikinya — file kuncinya yang harus dibuat.)
 # Probe dilewati juga bila client baru saja di-restart (beri waktu bangun).
-if [ "$TUNNEL_RESTARTED" -eq 0 ] && [ -f "$D/.tunnel-url" ] && [ -f "$D/.health-key" ]; then
+if [ "$TUNNEL_RESTARTED" -eq 0 ] && [ -f "$D/.tunnel-url" ]; then
   TURL="$(tr -d '[:space:]' < "$D/.tunnel-url")"
   TURL="${TURL%/}"
-  HKEY="$(tr -d '[:space:]' < "$D/.health-key")"
-  if [ -n "$TURL" ] && [ -n "$HKEY" ]; then
+  HKEY=""
+  [ -f "$D/.health-key" ] && HKEY="$(tr -d '[:space:]' < "$D/.health-key")"
+  if [ -z "$HKEY" ]; then
+    echo "[$(date -u '+%F %H:%M:%S')] watchdog ERROR: .health-key hilang/kosong di $D/.health-key padahal deployment tunnel publik terdeteksi (.tunnel-url ada) — probe kesehatan tunnel NONAKTIF, tunnel dinyatakan TIDAK SEHAT (konfigurasi). Buat file-nya: bash scripts/setup-tunnel.sh, atau generate manual + setel secret HEALTH_KEY (lihat README)." >> "$D/watchdog.log"
+  elif [ -n "$TURL" ]; then
     NONCE="wd-$(date +%s)-$$-${RANDOM:-0}"
     PBODY="$(curl -s -m 50 -H "x-tunnel-health-key: $HKEY" -H "x-health-nonce: $NONCE" "$TURL/__tunnel-health" 2>/dev/null)"
     case "$PBODY" in

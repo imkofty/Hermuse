@@ -40,6 +40,8 @@ t() {
                 install_have_hermes) fmt="Hermes already present: %s" ;;
                 install_9router)     fmt="Installing 9Router..." ;;
                 install_have_9router) fmt="9Router already present: %s" ;;
+                install_wrangler)     fmt="Installing Wrangler (Cloudflare CLI)..." ;;
+                install_have_wrangler) fmt="Wrangler already present: %s" ;;
                 install_verify)      fmt="Verifying the Hermes installation..." ;;
                 install_doctor_ok)   fmt="hermes doctor: OK" ;;
                 install_doctor_warn) fmt="hermes doctor found issues — see the output above." ;;
@@ -72,6 +74,8 @@ t() {
                 tunnel_env_alt)      fmt="  (or save the URL in a .tunnel-url file when run via start-pages-tunnel.sh)" ;;
                 tunnel_key_unreadable) fmt="Cannot read key file: %s (create with: openssl rand -hex 32 > %s && chmod 600 %s)" ;;
                 tunnel_key_empty)    fmt="Empty key in %s" ;;
+                tunnel_local_not_loopback) fmt="TUNNEL_LOCAL must be a loopback URL (got: %s). Set TUNNEL_ALLOW_REMOTE_LOCAL=1 only if you really mean to forward elsewhere." ;;
+                tunnel_response_too_large) fmt="Local response exceeds the %s MB cap" ;;
                 cf_usage)            fmt="Usage: %s <tunnel-name> <hostname>" ;;
                 cf_installing)       fmt="Installing cloudflared..." ;;
                 cf_have)             fmt="cloudflared already present: %s" ;;
@@ -105,6 +109,8 @@ t() {
                 install_have_hermes) fmt="Hermes telah dipasang: %s" ;;
                 install_9router)     fmt="Memasang 9Router..." ;;
                 install_have_9router) fmt="9Router telah dipasang: %s" ;;
+                install_wrangler)     fmt="Memasang Wrangler (CLI Cloudflare)..." ;;
+                install_have_wrangler) fmt="Wrangler telah dipasang: %s" ;;
                 install_verify)      fmt="Mengesahkan pemasangan Hermes..." ;;
                 install_doctor_ok)   fmt="hermes doctor: OK" ;;
                 install_doctor_warn) fmt="hermes doctor menemui masalah — lihat output di atas." ;;
@@ -137,6 +143,8 @@ t() {
                 tunnel_env_alt)      fmt="  (atau simpan URL dalam fail .tunnel-url jika dijalankan melalui start-pages-tunnel.sh)" ;;
                 tunnel_key_unreadable) fmt="Tidak dapat membaca fail kunci: %s (cipta dengan: openssl rand -hex 32 > %s && chmod 600 %s)" ;;
                 tunnel_key_empty)    fmt="Kunci kosong di %s" ;;
+                tunnel_local_not_loopback) fmt="TUNNEL_LOCAL mestilah URL loopback (diberi: %s). Tetapkan TUNNEL_ALLOW_REMOTE_LOCAL=1 hanya jika anda memang mahu forward ke tempat lain." ;;
+                tunnel_response_too_large) fmt="Respons lokal melebihi had %s MB" ;;
                 cf_usage)            fmt="Penggunaan: %s <nama-tunnel> <hostname>" ;;
                 cf_installing)       fmt="Memasang cloudflared..." ;;
                 cf_have)             fmt="cloudflared telah dipasang: %s" ;;
@@ -169,6 +177,8 @@ t() {
                 install_hermes)      fmt="Menginstall Hermes Agent..." ;;
                 install_have_hermes) fmt="Hermes sudah ada: %s" ;;
                 install_have_9router) fmt="9Router sudah ada: %s" ;;
+                install_wrangler)     fmt="Menginstall Wrangler (CLI Cloudflare)..." ;;
+                install_have_wrangler) fmt="Wrangler sudah ada: %s" ;;
                 install_9router)     fmt="Menginstall 9Router..." ;;
                 install_verify)      fmt="Verifikasi instalasi Hermes..." ;;
                 install_doctor_ok)   fmt="hermes doctor: OK" ;;
@@ -202,6 +212,8 @@ t() {
                 tunnel_env_alt)      fmt="  (atau simpan URL di file .tunnel-url bila dijalankan via start-pages-tunnel.sh)" ;;
                 tunnel_key_unreadable) fmt="Tidak bisa baca key file: %s (buat dengan: openssl rand -hex 32 > %s && chmod 600 %s)" ;;
                 tunnel_key_empty)    fmt="Key kosong di %s" ;;
+                tunnel_local_not_loopback) fmt="TUNNEL_LOCAL harus berupa URL loopback (diberi: %s). Set TUNNEL_ALLOW_REMOTE_LOCAL=1 hanya bila memang sengaja forward ke tempat lain." ;;
+                tunnel_response_too_large) fmt="Respons lokal melebihi batas %s MB" ;;
                 cf_usage)            fmt="Pakai: %s <nama-tunnel> <hostname>" ;;
                 cf_installing)       fmt="Menginstall cloudflared..." ;;
                 cf_have)             fmt="cloudflared sudah ada: %s" ;;

@@ -14,6 +14,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 log() { printf '\033[1;32m[install]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[install]\033[0m %s\n' "$*" >&2; }
 
+# --- Versi dependensi (di-pin agar instalasi bisa direproduksi) ---
+# Naikkan versi lewat env var, mis. HERMUSE_9ROUTER_VERSION=0.6.0 bash scripts/install.sh
+# Rollback = jalankan ulang installer dengan versi lama di env var yang sama.
+NINE_ROUTER_VERSION="${HERMUSE_9ROUTER_VERSION:-0.5.104}"
+WRANGLER_VERSION="${HERMUSE_WRANGLER_VERSION:-4.151.2}"
+
 # --- 1. Cek OS ---
 if ! command -v apt-get >/dev/null 2>&1; then
   warn "$(t install_debian_only)"
@@ -66,13 +72,25 @@ fi
 if ! command -v 9router >/dev/null 2>&1; then
   log "$(t install_9router)"
   mkdir -p "$HOME/.npm-global"
-  npm install -g --prefix "$HOME/.npm-global" 9router
+  npm install -g --prefix "$HOME/.npm-global" "9router@$NINE_ROUTER_VERSION"
   export PATH="$HOME/.npm-global/bin:$PATH"
   # pastikan persisten untuk shell berikutnya
   grep -q '.npm-global/bin' ~/.bashrc 2>/dev/null || \
     echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc
 else
   log "$(t install_have_9router "$(9router --version 2>/dev/null || echo '?')")"
+fi
+
+# --- 5b. Wrangler (CLI Cloudflare — prasyarat scripts/setup-tunnel.sh) ---
+# Dulu setup-tunnel.sh menggantungkan wrangler yang belum tentu ada; sekarang
+# installer yang menjamin keberadaannya, di prefix yang sama dengan 9Router.
+if ! command -v wrangler >/dev/null 2>&1 && [ ! -x "$HOME/.npm-global/bin/wrangler" ]; then
+  log "$(t install_wrangler)"
+  mkdir -p "$HOME/.npm-global"
+  npm install -g --prefix "$HOME/.npm-global" "wrangler@$WRANGLER_VERSION"
+  export PATH="$HOME/.npm-global/bin:$PATH"
+else
+  log "$(t install_have_wrangler "$(wrangler --version 2>/dev/null || "$HOME/.npm-global/bin/wrangler" --version 2>/dev/null || echo '?')")"
 fi
 
 # --- 6. Verifikasi ---

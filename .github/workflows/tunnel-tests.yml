@@ -27,6 +27,8 @@ jobs:
         run: bash tests/installer-version.test.sh
       - name: Tunnel schema preflight test
         run: bash tests/schema-check.test.sh
+      - name: Tunnel setup provisioning test
+        run: bash tests/setup-tunnel.test.sh
       - name: Shell syntax check
         run: |
           for f in *.sh scripts/*.sh lib/*.sh; do bash -n "$f"; done

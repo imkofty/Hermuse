@@ -8,6 +8,8 @@
 #      dengan pesan jelas — bukan Permission denied, bukan menggantung.
 #   3. Dengan `hermes` di PATH, argumen diteruskan apa adanya
 #      (membuktikan wiring start-gateway.sh -> run-hermes.sh -> hermes).
+#   4. start-9router.sh fail-closed: .tunnel-url ada tapi .dashboard-pw
+#      hilang ATAU kosong -> exit 1 (putaran 3 + 4).
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -43,6 +45,33 @@ out="$(PATH="$TMP/bin" HOME="$TMP" ./run-hermes.sh gateway run 2>&1)"
 case "$out" in
   *"STUB-HERMES args: gateway run"*) : ;;
   *) echo "FAIL: argumen tidak diteruskan ke hermes: $out"; fail=1 ;;
+esac
+
+# 4. start-9router.sh fail-closed (putaran 3+4): dengan .tunnel-url ada,
+#    .dashboard-pw HILANG -> exit 1; .dashboard-pw KOSONG -> exit 1 juga
+#    (dulu file kosong lolos dan 9Router jalan dengan password kosong).
+#    Layout disalin ke temp agar file penanda tidak menyentuh repo asli.
+APP="$TMP/app"
+mkdir -p "$APP/lib"
+cp "$ROOT/start-9router.sh" "$APP/start-9router.sh"
+cp "$ROOT/lib/i18n.sh" "$APP/lib/i18n.sh"
+echo "https://tunnel.example" > "$APP/.tunnel-url"
+out="$(cd "$APP" && HOME="$TMP" timeout 5 bash ./start-9router.sh 2>&1)"
+code=$?
+if [ $code -ne 1 ]; then
+  echo "FAIL: start-9router.sh tanpa .dashboard-pw exit=$code, seharusnya 1. Output: $out"
+  fail=1
+fi
+printf '' > "$APP/.dashboard-pw"
+out="$(cd "$APP" && HOME="$TMP" timeout 5 bash ./start-9router.sh 2>&1)"
+code=$?
+if [ $code -ne 1 ]; then
+  echo "FAIL: start-9router.sh dengan .dashboard-pw KOSONG exit=$code, seharusnya 1. Output: $out"
+  fail=1
+fi
+case "$out" in
+  *"dashboard-pw"*) : ;;
+  *) echo "FAIL: pesan penolakan tidak menyebut .dashboard-pw: $out"; fail=1 ;;
 esac
 
 if [ $fail -eq 0 ]; then

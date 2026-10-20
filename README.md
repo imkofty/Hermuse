@@ -240,8 +240,10 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <pages-project-name>
 - Telegram gateway: **default-deny**. Only numeric IDs in
   `TELEGRAM_ALLOWED_USERS` can use the bot (`TELEGRAM_BOT_TOKEN` +
   `TELEGRAM_ALLOWED_USERS` live in `.env`).
-- **Change the 9Router dashboard password from the default** right after
-  install — especially since the tunnel URL is public.
+- **9Router dashboard password:** `scripts/setup-tunnel.sh` generates
+  `.dashboard-pw` (600) for you, and `start-9router.sh` refuses to boot
+  while a public tunnel is configured if that file is missing or empty.
+  Change its contents if you want a password of your own.
 - Don't expose port 20128 to the internet unprotected; 9Router binds to
   `127.0.0.1` only.
 - If your Telegram bot token leaks: `/revoke` in @BotFather, replace it in
@@ -251,9 +253,10 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <pages-project-name>
   call unless `TUNNEL_KEY` is set as a Pages secret AND matches the client's
   key — an unset secret no longer silently means "open tunnel".
 - **Upgrading an existing tunnel database?** Run the one-time migrations
-  **in order** — old databases need all three, not just the first:
+  **in order** — old databases need all four, not just the first:
   `wrangler d1 execute <db-name> --remote --file=tunnel/migrations/001-claim-lease.sql`
-  then `002-idempotency-ratelimit.sql`, then `003-response-idempotency.sql`
+  then `002-idempotency-ratelimit.sql`, then `003-response-idempotency.sql`,
+  then `004-idempotency-principal.sql`
   (same command, different `--file`). Fresh installs don't need them
   (schema.sql already includes everything), and re-running
   `scripts/setup-tunnel.sh` applies them for you. Verify afterwards with
@@ -264,11 +267,17 @@ CLOUDFLARE_API_TOKEN='<token>' bash scripts/setup-tunnel.sh <pages-project-name>
   tunnel accepts request/response bodies up to 1,350,000 raw bytes
   (1,800,000 Base64 chars); larger payloads get a clear 413 instead of a
   failed database insert.
+- **Idempotency is bound to the caller.** A stored response is replayed
+  only when the idempotency key, the caller's credential, and the exact
+  request payload all match. Reusing a key with a different payload gets
+  a 409 Conflict; another caller's response is never replayed to you.
 - **Watchdog health checks traverse the real tunnel.** With a
   `.health-key` file (created by `scripts/setup-tunnel.sh`), the watchdog
   and doctor verify the public tunnel end-to-end with an authenticated
   nonce probe answered by the local client — an edge 401/403 alone no
-  longer counts as "healthy".
+  longer counts as "healthy". If `.tunnel-url` exists but `.health-key`
+  is missing or empty, the watchdog logs a hard ERROR and fails the
+  tunnel check instead of silently skipping the probe.
 
 ## Notes
 

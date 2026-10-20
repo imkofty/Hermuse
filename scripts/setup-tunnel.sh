@@ -51,7 +51,7 @@ fi
 # Database baru cukup schema.sql (semua CREATE ... IF NOT EXISTS).
 # Database LAMA (dibuat skema versi sebelumnya) membuat schema.sql
 # gagal di statement index yang butuh kolom baru — itu sinyal untuk
-# naik lewat migrasi 001 -> 002 -> 003 BERURUTAN, lalu schema.sql
+# naik lewat migrasi 001 -> 002 -> 003 -> 004 BERURUTAN, lalu schema.sql
 # dijalankan sekali lagi (kini harus berhasil). ALTER di dalam migrasi
 # yang gagal karena kolom sudah ada ("duplicate column name") aman —
 # berarti migrasi itu sudah pernah diterapkan — jadi kegagalan per
@@ -59,7 +59,7 @@ fi
 log "$(t tunnel_apply_schema)"
 if ! wrangler d1 execute "$DB_NAME" --remote --file="$TUNNEL_DIR/schema.sql"; then
   log "$(t tunnel_apply_migrations)"
-  for mig in 001-claim-lease.sql 002-idempotency-ratelimit.sql 003-response-idempotency.sql; do
+  for mig in 001-claim-lease.sql 002-idempotency-ratelimit.sql 003-response-idempotency.sql 004-idempotency-principal.sql; do
     wrangler d1 execute "$DB_NAME" --remote --file="$TUNNEL_DIR/migrations/$mig" \
       || warn "migration $mig: sebagian statement dilewati (kemungkinan sudah pernah diterapkan)"
   done
@@ -118,6 +118,20 @@ else
   log "$(t tunnel_gate_pw_file "$GATE_PW_FILE")"
 fi
 
+# --- 6d. Password dashboard 9Router (.dashboard-pw di root repo, 600,
+# TIDAK pernah di-commit — lihat .gitignore). start-9router.sh MENOLAK
+# boot bila .tunnel-url ada tapi .dashboard-pw tidak ada/kosong
+# (fail-closed putaran 3+4), jadi setup WAJIB memprovision-nya —
+# sebelum ini instalasi bersih macet persis di langkah itu. Pola sama
+# seperti .gate-pw: generate acak kuat hanya bila belum ada isinya;
+# file yang sudah berisi TIDAK pernah ditimpa.
+DASH_PW_FILE="$REPO_ROOT/.dashboard-pw"
+if [ ! -s "$DASH_PW_FILE" ]; then
+  log "$(t tunnel_gen_dashboard_pw)"
+  openssl rand -hex 16 > "$DASH_PW_FILE"
+  chmod 600 "$DASH_PW_FILE"
+fi
+
 # --- 7. Deploy Pages Functions ---
 log "$(t tunnel_deploy)"
 (cd "$PAGES_DIR" && wrangler pages deploy . --project-name="$PROJECT")
@@ -140,6 +154,8 @@ cat << EOF
      (probe kesehatannya memakai .health-key yang dibuat setup ini)
   6. Dashboard publik ter-gate password: kata sandinya di $GATE_PW_FILE
      (user Basic auth default: hermuse). Ganti dari file itu bila perlu.
-  7. PENTING: ganti password dashboard 9Router dari default!
+  7. Password dashboard 9Router dibuatkan di $DASH_PW_FILE (chmod 600) —
+     dibaca start-9router.sh; tanpa file ini 9Router menolak jalan
+     selama .tunnel-url ada. Ganti isinya bila ingin password sendiri.
 ============================================================
 EOF

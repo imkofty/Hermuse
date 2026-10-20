@@ -236,9 +236,12 @@ test("timeout ingress tidak membatalkan request; hasil diambil via /__tunnel/res
 
 test("idempotency-key: kiriman ulang tidak membuat request kedua", async () => {
   const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  // Sejak putaran 5 dedup/replay hanya berlaku untuk principal
+  // TERVERIFIKASI — tes ini memakai Authorization agar tetap menguji
+  // perilaku dedup saat antre (anon diuji terpisah di bagian putaran 5).
   const mk = () => new Request("https://tunnel.example/v1/chat/completions", {
     method: "POST",
-    headers: { "content-type": "application/json", "idempotency-key": "key-123" },
+    headers: { "content-type": "application/json", "idempotency-key": "key-123", authorization: "Bearer kunci-tes" },
     body: JSON.stringify({ model: "x" }),
   });
   const p1 = ingress.onRequest({ request: mk(), env });
@@ -344,9 +347,12 @@ test("respond menolak body Base64 melewati kapasitas D1 (413), tepat di batas lo
 
 test("idempotency SETELAH pengiriman: retry key sama dilayani dari respons, tanpa request baru", async () => {
   const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  // Replay pasca-pengiriman sejak putaran 5 khusus principal
+  // terverifikasi — tes ini membawa Authorization (perilaku anon:
+  // selalu diproses segar, lihat bagian putaran 5).
   const mk = () => new Request("https://tunnel.example/v1/chat/completions", {
     method: "POST",
-    headers: { "content-type": "application/json", "idempotency-key": "key-selesai" },
+    headers: { "content-type": "application/json", "idempotency-key": "key-selesai", authorization: "Bearer kunci-tes" },
     body: JSON.stringify({ model: "x" }),
   });
   const p1 = ingress.onRequest({ request: mk(), env });
@@ -596,4 +602,73 @@ test("migrasi 003 di atas 001+002: kolom idempotency respons + index unik", asyn
   assert.ok(cols.includes("idempotency_key"));
   const idx = db.raw("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tunnel_responses_idem'");
   assert.equal(idx.length, 1);
+});
+
+// --- Putaran 5 (audit lanjutan 2026-10-21): replay hanya principal terverifikasi ---
+// (b) replay principal auth & (c) 409 fingerprint beda untuk principal
+// terverifikasi TIDAK berubah — dicakup tes putaran 4 (a) dan (c) di
+// atas. Yang baru di sini: perilaku ANON.
+
+test("putaran 5 (a): dua request ANON key+body sama -> backend dipanggil DUA kali, tidak ada replay", async () => {
+  const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  const p1 = ingress.onRequest({ request: idemReq(null, "key-anon", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  const q1 = await completeNext(env, "jawaban-anon-1");
+  const r1 = await p1;
+  assert.equal(r1.status, 200);
+  assert.equal(await r1.text(), "jawaban-anon-1");
+  // Respons anon tetap disimpan (result-fetch tidak berubah), tapi
+  // principal tersimpannya NULL — tidak ada namespace replay anon.
+  const stored = env.DB.raw("SELECT idem_principal FROM tunnel_responses")[0];
+  assert.equal(stored.idem_principal, null);
+  // Request kedua dengan key+body IDENTIK: dibuat baris antrean BARU
+  // dan dijawab backend lagi — BUKAN replay jawaban pertama.
+  const p2 = ingress.onRequest({ request: idemReq(null, "key-anon", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(Number(env.DB.raw("SELECT COUNT(*) AS n FROM tunnel_requests")[0].n), 1);
+  const q2 = await completeNext(env, "jawaban-anon-2");
+  assert.notEqual(q2.id, q1.id);
+  const r2 = await p2;
+  assert.equal(r2.status, 200);
+  assert.equal(await r2.text(), "jawaban-anon-2");
+});
+
+test("putaran 5 (a2): dua request ANON bersamaan, key sama -> dua baris antrean terpisah", async () => {
+  const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  const p1 = ingress.onRequest({ request: idemReq(null, "key-anon-bersama", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  const p2 = ingress.onRequest({ request: idemReq(null, "key-anon-bersama", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  // Anon TIDAK menempel ke request yang sedang antre (berbeda dengan
+  // principal terverifikasi): dua baris independen, dua pemrosesan.
+  assert.equal(Number(env.DB.raw("SELECT COUNT(*) AS n FROM tunnel_requests")[0].n), 2);
+  const { requests } = await (await poll.onRequestPost({ request: postReq({ key: KEY, limit: 4 }), env })).json();
+  assert.equal(requests.length, 2);
+  for (const q of requests) {
+    await respond.onRequestPost({
+      request: postReq({
+        key: KEY, id: q.id, claim_token: q.claim_token, status_code: 200,
+        headers: {}, body: Buffer.from("ok").toString("base64"),
+      }), env,
+    });
+  }
+  assert.equal((await p1).status, 200);
+  assert.equal((await p2).status, 200);
+});
+
+test("putaran 5 (a3): ANON key sama, body beda -> BUKAN 409, diproses segar", async () => {
+  const env = { ...makeEnv(), INGRESS_WAIT_MS: "5000" };
+  const p1 = ingress.onRequest({ request: idemReq(null, "key-anon-beda", { model: "x" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  await completeNext(env, "jawaban-anon-x");
+  assert.equal((await p1).status, 200);
+  const p2 = ingress.onRequest({ request: idemReq(null, "key-anon-beda", { model: "LAIN" }), env });
+  await new Promise((r) => setTimeout(r, 300));
+  // 409 adalah perilaku principal terverifikasi; anon tidak punya
+  // namespace untuk dikonflikkan — request-nya antre sebagai baru.
+  assert.equal(Number(env.DB.raw("SELECT COUNT(*) AS n FROM tunnel_requests")[0].n), 1);
+  await completeNext(env, "jawaban-anon-lain");
+  const r2 = await p2;
+  assert.equal(r2.status, 200);
+  assert.equal(await r2.text(), "jawaban-anon-lain");
 });

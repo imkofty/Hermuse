@@ -64,6 +64,22 @@
 //     key+principal sama, fingerprint beda -> 409 Conflict (key dipakai
 //       ulang untuk request yang berbeda oleh pemanggil yang sama).
 //   respond.js menyalin ketiganya atomik ke baris respons (migrasi 004).
+//
+// Pengerasan putaran 5 (audit lanjutan 2026-10-21):
+// - Replay idempotency HANYA untuk principal TERVERTIFIKASI ("auth:"
+//   atau "hk:"). Principal "anon" (tanpa Authorization & tanpa
+//   health-key) tidak bisa membedakan satu pemanggil dari pemanggil
+//   lain, jadi melayani replay untuknya berarti dua pemanggil anonim
+//   berbeda berbagi namespace idempotency — pemanggil kedua menerima
+//   respons pemanggil pertama. Kini request anon SELALU diproses
+//   segar: kedua lookup replay dilewati, dan baris request-nya
+//   menyimpan principal NULL (tidak pernah cocok dengan lookup
+//   replay mana pun + tidak bertabrakan di index unik gabungan,
+//   sehingga dua request anon bersamaan pun independen). Respons
+//   anon tetap disimpan seperti biasa (result-fetch & masa simpan
+//   tidak berubah) — hanya tidak pernah dipakai sebagai replay.
+//   Perilaku principal terverifikasi (replay + 409 fingerprint beda)
+//   tidak berubah dari putaran 4.
 const MAX_BODY_BYTES = 1350000; // -> Base64 1.800.000 char; + header < 2.000.000 byte/baris D1
 const MAX_HEADERS_BYTES = 32768;
 const WAIT_MS_DEFAULT = 40000;
@@ -87,10 +103,12 @@ async function sha256Hex(data) {
 //   - Header Authorization (kredensial API yang diteruskan ke backend;
 //     pada path dashboard isinya kredensial gate Basic) -> "auth:"+hash.
 //   - Tanpa Authorization tapi membawa x-tunnel-health-key -> "hk:"+hash.
-//   - Tanpa kredensial apa pun -> penanda eksplisit "anon": semua
-//     pemanggil anonim memang tidak bisa dibedakan satu sama lain, jadi
-//     mereka berbagi satu principal (fingerprint tetap mencegah replay
-//     untuk payload yang berbeda -> 409).
+//   - Tanpa kredensial apa pun -> penanda eksplisit "anon": principal
+//     TAK terverifikasi. Sejak putaran 5, "anon" tidak pernah dilayani
+//     replay (pemanggil anonim tidak bisa dibedakan satu sama lain —
+//     berbagi namespace replay = kebocoran); request-nya selalu
+//     diproses segar dan principal yang DISIMPAN adalah NULL, yang
+//     tidak pernah cocok dengan lookup replay mana pun.
 // Yang disimpan SELALU hash SHA-256 hex — kredensial mentah tidak pernah
 // ditulis ke database.
 async function derivePrincipal(request) {
@@ -228,7 +246,8 @@ export async function onRequest({ request, env }) {
   if (JSON.stringify(headers).length > MAX_HEADERS_BYTES)
     return new Response("request headers too large", { status: 413 });
 
-  // --- Enqueue (dengan idempotency terikat pemanggil, putaran 4) ---
+  // --- Enqueue (idempotency terikat pemanggil, putaran 4; replay
+  // hanya untuk principal terverifikasi, putaran 5) ---
   const idemKey = request.headers.get("idempotency-key") ||
                   request.headers.get("x-idempotency-key");
   let id = crypto.randomUUID();
@@ -251,52 +270,70 @@ export async function onRequest({ request, env }) {
         { status: 409 }
       );
     };
-    // Replay SETELAH pengiriman pertama: hasilnya sudah ada di
-    // tunnel_responses (key+principal+fingerprint tersalin di sana)
-    // walau baris request-nya sudah dihapus — layani langsung, JANGAN
-    // buat request baru. Key sama tapi principal BEDA tidak menemukan
-    // baris apa pun di sini: respons pemanggil lain tidak bocor.
-    const prior = await env.DB.prepare(
-      "SELECT id, status_code, headers, body, idem_fingerprint FROM tunnel_responses " +
-      "WHERE idempotency_key=? AND idem_principal=?"
-    ).bind(idemKey, principal).first();
-    if (prior) {
-      if (prior.idem_fingerprint !== fingerprint) return conflict();
-      console.log(JSON.stringify({
-        ev: "ingress_replay", id: prior.id, method: request.method,
-        path: url.pathname, status: prior.status_code,
-        ms: Date.now() - startedAt,
-      }));
-      return deliver(prior, prior.id);
-    }
-    const existing = await env.DB.prepare(
-      "SELECT id, idem_fingerprint FROM tunnel_requests " +
-      "WHERE idempotency_key=? AND idem_principal=?"
-    ).bind(idemKey, principal).first();
-    if (existing) {
-      if (existing.idem_fingerprint !== fingerprint) return conflict();
-      id = existing.id; // kiriman ulang: tunggu hasil request pertama
+    // Putaran 5: replay HANYA untuk principal terverifikasi.
+    // "anon" tidak membawa kredensial apa pun yang membedakan satu
+    // pemanggil dari pemanggil lain — melayani replay untuknya akan
+    // membocorkan respons pemanggil pertama ke pemanggil anonim
+    // berikutnya yang memakai key sama. Request anon selalu diproses
+    // segar; principal yang disimpan NULL (tidak pernah cocok dengan
+    // lookup replay, dan tidak bertabrakan di index unik gabungan
+    // sehingga request anon bersamaan pun tetap independen).
+    const verified = principal.startsWith("auth:") || principal.startsWith("hk:");
+    if (!verified) {
+      await env.DB.prepare(
+        "INSERT INTO tunnel_requests (id, method, path, headers, body, status, created_at, idempotency_key, idem_principal, idem_fingerprint) " +
+        "VALUES (?,?,?,?,?,'pending',?,?,?,?)"
+      ).bind(id, request.method, url.pathname + url.search, JSON.stringify(headers),
+             bodyB64, Date.now(), idemKey, null, fingerprint).run();
       enqueued = true;
-    }
-    if (!enqueued) {
-      try {
-        await env.DB.prepare(
-          "INSERT INTO tunnel_requests (id, method, path, headers, body, status, created_at, idempotency_key, idem_principal, idem_fingerprint) " +
-          "VALUES (?,?,?,?,?,'pending',?,?,?,?)"
-        ).bind(id, request.method, url.pathname + url.search, JSON.stringify(headers),
-               bodyB64, Date.now(), idemKey, principal, fingerprint).run();
+    } else {
+      // Replay SETELAH pengiriman pertama: hasilnya sudah ada di
+      // tunnel_responses (key+principal+fingerprint tersalin di sana)
+      // walau baris request-nya sudah dihapus — layani langsung, JANGAN
+      // buat request baru. Key sama tapi principal BEDA tidak menemukan
+      // baris apa pun di sini: respons pemanggil lain tidak bocor.
+      const prior = await env.DB.prepare(
+        "SELECT id, status_code, headers, body, idem_fingerprint FROM tunnel_responses " +
+        "WHERE idempotency_key=? AND idem_principal=?"
+      ).bind(idemKey, principal).first();
+      if (prior) {
+        if (prior.idem_fingerprint !== fingerprint) return conflict();
+        console.log(JSON.stringify({
+          ev: "ingress_replay", id: prior.id, method: request.method,
+          path: url.pathname, status: prior.status_code,
+          ms: Date.now() - startedAt,
+        }));
+        return deliver(prior, prior.id);
+      }
+      const existing = await env.DB.prepare(
+        "SELECT id, idem_fingerprint FROM tunnel_requests " +
+        "WHERE idempotency_key=? AND idem_principal=?"
+      ).bind(idemKey, principal).first();
+      if (existing) {
+        if (existing.idem_fingerprint !== fingerprint) return conflict();
+        id = existing.id; // kiriman ulang: tunggu hasil request pertama
         enqueued = true;
-      } catch {
-        // Race: key+principal yang sama keburu dimasukkan request lain
-        // (index unik gabungan) — pakai punyanya, dengan cek fingerprint.
-        const row = await env.DB.prepare(
-          "SELECT id, idem_fingerprint FROM tunnel_requests " +
-          "WHERE idempotency_key=? AND idem_principal=?"
-        ).bind(idemKey, principal).first();
-        if (!row) throw new Error("enqueue failed");
-        if (row.idem_fingerprint !== fingerprint) return conflict();
-        id = row.id;
-        enqueued = true;
+      }
+      if (!enqueued) {
+        try {
+          await env.DB.prepare(
+            "INSERT INTO tunnel_requests (id, method, path, headers, body, status, created_at, idempotency_key, idem_principal, idem_fingerprint) " +
+            "VALUES (?,?,?,?,?,'pending',?,?,?,?)"
+          ).bind(id, request.method, url.pathname + url.search, JSON.stringify(headers),
+                 bodyB64, Date.now(), idemKey, principal, fingerprint).run();
+          enqueued = true;
+        } catch {
+          // Race: key+principal yang sama keburu dimasukkan request lain
+          // (index unik gabungan) — pakai punyanya, dengan cek fingerprint.
+          const row = await env.DB.prepare(
+            "SELECT id, idem_fingerprint FROM tunnel_requests " +
+            "WHERE idempotency_key=? AND idem_principal=?"
+          ).bind(idemKey, principal).first();
+          if (!row) throw new Error("enqueue failed");
+          if (row.idem_fingerprint !== fingerprint) return conflict();
+          id = row.id;
+          enqueued = true;
+        }
       }
     }
   }

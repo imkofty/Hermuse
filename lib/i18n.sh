@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hermuse i18n helper — user-facing strings in 3 languages.
+# Hermuse i18n helper — user-facing strings in 5 languages.
 #
 # Usage in a script (repo root assumed via SCRIPT_DIR):
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,7 +10,7 @@
 #   log "$(t install_have_node "$(node --version)")"
 #
 # Language: ${HERMUSE_LANG:-id} — one of: id (default, legacy behaviour),
-# en, ms. Unknown values fall back to id.
+# en, ms, vi, hi. Unknown values fall back to id.
 #
 # NOTE for translators: keep product names, commands and paths in English.
 # Malay follows the repo's ms style guide: "anda", no Manglish particles,
@@ -22,7 +22,7 @@ t() {
     local key="$1"; shift || true
     local lang="${HERMUSE_LANG:-id}"
     case "$lang" in
-        en|ms) ;;
+        en|ms|vi|hi) ;;
         *) lang="id" ;;
     esac
     local fmt=""
@@ -183,6 +183,164 @@ t() {
                 cf_dns_exists)       fmt="DNS route gagal — rekod mungkin telah wujud. Cipta CNAME secara manual jika perlu." ;;
                 cf_9router_warn)     fmt="9Router tidak menjawab di 127.0.0.1:20128 — pastikan ia berjalan sebelum menggunakan tunnel." ;;
                 cf_done)             fmt="Siap! Dashboard awam: https://%s" ;;
+            esac
+            ;;
+        vi)
+            case "$key" in
+                install_debian_only)       fmt="Script này dành cho Debian/Ubuntu (cần apt-get). Hãy cài đặt thủ công trên các bản phân phối khác." ;;
+                install_need_sudo)         fmt="Cần lệnh 'sudo' — hoặc chạy script này với quyền root." ;;
+                install_sudo_pw)           fmt="sudo đang yêu cầu mật khẩu, nhưng script này được thiết kế để chạy không tương tác." ;;
+                install_enable_sudo)       fmt="Hãy bật sudo không cần mật khẩu cho người dùng này, hoặc chạy với quyền root." ;;
+                install_deps)              fmt="Đang cài đặt các gói phụ thuộc cơ bản (git, curl, tar)..." ;;
+                install_node)              fmt="Đang cài đặt Node.js LTS qua NodeSource..." ;;
+                install_have_node)         fmt="Node.js đã có sẵn: %s" ;;
+                install_hermes)            fmt="Đang cài đặt Hermes Agent..." ;;
+                install_have_hermes)       fmt="Hermes đã có sẵn: %s" ;;
+                install_version_ok)        fmt="Phiên bản %s đã xác minh: %s" ;;
+                install_align_version)     fmt="%s đang ở phiên bản %s, nhưng trình cài đặt này cố định %s — đang cài lại cho khớp..." ;;
+                install_pkg_fresh)         fmt="Đang cài đặt %s %s..." ;;
+                install_version_bad)       fmt="LỖI: phiên bản %s sau khi cài là %s, trong khi yêu cầu %s — hủy bỏ." ;;
+                install_verify)            fmt="Đang xác minh bản cài đặt Hermes..." ;;
+                install_doctor_ok)         fmt="hermes doctor: OK" ;;
+                install_doctor_warn)       fmt="hermes doctor phát hiện vấn đề — xem kết quả ở trên." ;;
+                tunnel_usage)              fmt="Cách dùng: %s <pages-project-name> <d1-name>" ;;
+                tunnel_need_wrangler)      fmt="wrangler chưa được cài đặt (npm i -g wrangler)." ;;
+                tunnel_need_node)          fmt="node chưa được cài đặt." ;;
+                tunnel_no_token)           fmt="CLOUDFLARE_API_TOKEN chưa được đặt; wrangler sẽ dùng đăng nhập trình duyệt nếu cần." ;;
+                tunnel_key_exists)         fmt="Key đã tồn tại tại %s — dùng lại key hiện có." ;;
+                tunnel_gen_key)            fmt="Đang tạo tunnel key mới..." ;;
+                tunnel_mk_d1)              fmt="Đang tạo cơ sở dữ liệu D1 '%s'..." ;;
+                tunnel_d1_exists)          fmt="D1 '%s' đã tồn tại — bỏ qua bước tạo." ;;
+                tunnel_apply_schema)       fmt="Đang áp dụng schema.sql vào D1..." ;;
+                tunnel_d1_noid)            fmt="Không đọc được database_id của D1." ;;
+                tunnel_wrangler_toml)      fmt="Đã tạo wrangler.toml cho project '%s'." ;;
+                tunnel_ensure_pages)       fmt="Đang đảm bảo Pages project '%s' tồn tại..." ;;
+                tunnel_pages_exists)       fmt="Pages project '%s' đã tồn tại — tiếp tục." ;;
+                tunnel_set_secret)         fmt="Đang đặt TUNNEL_KEY làm Pages secret (production)..." ;;
+                tunnel_deploy)             fmt="Đang deploy lên Pages..." ;;
+                tunnel_done)               fmt="Xong! Tunnel URL: %s" ;;
+                router_pw_warn)            fmt="CẢNH BÁO: %s bị thiếu hoặc trống — 9Router đang chạy với mật khẩu mặc định. Hãy tạo file (chmod 600) rồi khởi động lại." ;;
+                router_pw_required_public) fmt="LỖI: %s bị thiếu hoặc trống nhưng tunnel công khai đã được cấu hình (.tunnel-url tồn tại) — từ chối chạy 9Router với mật khẩu dashboard mặc định. Hãy tạo file (chmod 600), hoặc xóa .tunnel-url nếu chỉ dùng nội bộ." ;;
+                tunnel_apply_migrations)   fmt="Đang áp dụng các migration 001-004 theo thứ tự (an toàn trên cơ sở dữ liệu mới)..." ;;
+                tunnel_apply_migration)    fmt="Đang áp dụng migration %s (chưa được ghi trong schema_migrations)..." ;;
+                tunnel_schema_incomplete)  fmt="Schema tunnel vẫn chưa hoàn chỉnh sau migration — hủy bỏ thiết lập." ;;
+                tunnel_gen_health_key)     fmt="Đang tạo tunnel health key..." ;;
+                tunnel_health_key_exists)  fmt="Health key đã tồn tại: %s (giữ nguyên)" ;;
+                tunnel_gen_gate_pw)        fmt="Đang tạo mật khẩu gate dashboard..." ;;
+                tunnel_gen_dashboard_pw)   fmt="Đang tạo mật khẩu dashboard 9Router (.dashboard-pw)..." ;;
+                tunnel_gate_pw_file)       fmt="Mật khẩu gate đã lưu vào %s (chmod 600); đặt làm Pages secret GATE_PASSWORD + REQUIRE_GATE=1." ;;
+                tunnel_gate_skipped)       fmt="CẢNH BÁO: SETUP_NO_GATE=1 — gate dashboard KHÔNG được đặt; URL tunnel công khai sẽ phục vụ dashboard mà không có gate mật khẩu." ;;
+                gw_no_pid)                 fmt="Không có gateway PID (%s)" ;;
+                gw_abort_multi)            fmt="HỦY: %s ứng viên gateway PID, không kill (không rõ ràng): %s" ;;
+                gw_kill_fail)              fmt="THẤT BẠI: không kill được PID %s" ;;
+                gw_dryrun)                 fmt="DRY_RUN: would run start-gateway.sh + verify Connected" ;;
+                gw_restart_ok)             fmt="RESTART OK: gateway đã sống lại + Connected to Telegram (%s)" ;;
+                gw_restart_fail)           fmt="RESTART THẤT BẠI: không có 'Connected to Telegram' trong 60 giây (%s)" ;;
+                gw_abort_ambiguous)        fmt="HỦY: %s ứng viên gateway PID (không rõ ràng), giữ nguyên không đụng vào: %s" ;;
+                tunnel_env_missing)        fmt="TUNNEL_BASE_URL chưa được đặt. Ví dụ:" ;;
+                tunnel_env_example)        fmt="  TUNNEL_BASE_URL=https://<project-cua-ban>.pages.dev node tunnel-client.mjs" ;;
+                tunnel_env_alt)            fmt="  (hoặc lưu URL vào file .tunnel-url khi chạy qua start-pages-tunnel.sh)" ;;
+                tunnel_key_unreadable)     fmt="Không đọc được file key: %s (tạo bằng: openssl rand -hex 32 > %s && chmod 600 %s)" ;;
+                tunnel_key_empty)          fmt="Key trống trong %s" ;;
+                tunnel_local_not_loopback) fmt="TUNNEL_LOCAL phải là URL loopback (nhận được: %s). Chỉ đặt TUNNEL_ALLOW_REMOTE_LOCAL=1 khi bạn thực sự muốn forward đến nơi khác." ;;
+                tunnel_response_too_large) fmt="Phản hồi cục bộ vượt quá giới hạn %s MB" ;;
+                cf_usage)                  fmt="Cách dùng: %s <tunnel-name> <hostname>" ;;
+                cf_installing)             fmt="Đang cài đặt cloudflared..." ;;
+                cf_have)                   fmt="cloudflared đã có sẵn: %s" ;;
+                cf_install_fail)           fmt="Cài đặt cloudflared thất bại. Cài thủ công: https://github.com/cloudflare/cloudflared/releases" ;;
+                cf_unsupported_arch)       fmt="Kiến trúc %s không được hỗ trợ." ;;
+                cf_need_login)             fmt="Chưa đăng nhập Cloudflare — đang chạy 'cloudflared tunnel login'..." ;;
+                cf_login_fail)             fmt="Đăng nhập Cloudflare thất bại." ;;
+                cf_bad_hostname)           fmt="Hostname không hợp lệ: %s (ví dụ: 9router.example.com)" ;;
+                cf_creating)               fmt="Đang tạo tunnel '%s'..." ;;
+                cf_exists)                 fmt="Tunnel '%s' đã tồn tại — dùng lại (id %s)." ;;
+                cf_created)                fmt="Đã tạo tunnel: %s (id %s)" ;;
+                cf_no_id)                  fmt="Không xác định được tunnel ID." ;;
+                cf_no_cred)                fmt="Không tìm thấy file credentials: %s" ;;
+                cf_writing_config)         fmt="Đang ghi config vào %s..." ;;
+                cf_routing_dns)            fmt="Đang tạo DNS CNAME %s -> %s.cfargotunnel.com..." ;;
+                cf_dns_exists)             fmt="DNS route thất bại — bản ghi có thể đã tồn tại. Hãy tạo CNAME thủ công nếu cần." ;;
+                cf_9router_warn)           fmt="9Router không phản hồi tại 127.0.0.1:20128 — hãy chắc chắn nó đang chạy trước khi dùng tunnel." ;;
+                cf_done)                   fmt="Xong! Dashboard công khai: https://%s" ;;
+            esac
+            ;;
+        hi)
+            case "$key" in
+                install_debian_only)       fmt="यह स्क्रिप्ट Debian/Ubuntu के लिए है (apt-get आवश्यक है)। अन्य डिस्ट्रो पर मैन्युअल रूप से इंस्टॉल करें।" ;;
+                install_need_sudo)         fmt="'sudo' कमांड आवश्यक है — या इस स्क्रिप्ट को root के रूप में चलाएं।" ;;
+                install_sudo_pw)           fmt="sudo पासवर्ड मांग रहा है, लेकिन यह स्क्रिप्ट गैर-इंटरैक्टिव चलने के लिए बनाई गई है।" ;;
+                install_enable_sudo)       fmt="इस उपयोगकर्ता के लिए पासवर्ड-रहित sudo सक्षम करें, या root के रूप में चलाएं।" ;;
+                install_deps)              fmt="आधार निर्भरताएं इंस्टॉल हो रही हैं (git, curl, tar)..." ;;
+                install_node)              fmt="NodeSource के माध्यम से Node.js LTS इंस्टॉल हो रहा है..." ;;
+                install_have_node)         fmt="Node.js पहले से मौजूद है: %s" ;;
+                install_hermes)            fmt="Hermes Agent इंस्टॉल हो रहा है..." ;;
+                install_have_hermes)       fmt="Hermes पहले से मौजूद है: %s" ;;
+                install_version_ok)        fmt="%s का संस्करण सत्यापित: %s" ;;
+                install_align_version)     fmt="%s संस्करण %s पर इंस्टॉल है, लेकिन यह इंस्टॉलर %s को पिन करता है — मिलान के लिए फिर से इंस्टॉल हो रहा है..." ;;
+                install_pkg_fresh)         fmt="%s %s इंस्टॉल हो रहा है..." ;;
+                install_version_bad)       fmt="त्रुटि: इंस्टॉल के बाद %s का संस्करण %s है, अपेक्षित %s था — रद्द किया जा रहा है।" ;;
+                install_verify)            fmt="Hermes इंस्टॉलेशन सत्यापित हो रहा है..." ;;
+                install_doctor_ok)         fmt="hermes doctor: OK" ;;
+                install_doctor_warn)       fmt="hermes doctor को समस्याएं मिलीं — ऊपर दिया आउटपुट देखें।" ;;
+                tunnel_usage)              fmt="उपयोग: %s <pages-project-name> <d1-name>" ;;
+                tunnel_need_wrangler)      fmt="wrangler इंस्टॉल नहीं है (npm i -g wrangler)।" ;;
+                tunnel_need_node)          fmt="node इंस्टॉल नहीं है।" ;;
+                tunnel_no_token)           fmt="CLOUDFLARE_API_TOKEN सेट नहीं है; ज़रूरत पड़ने पर wrangler ब्राउज़र लॉगिन का उपयोग करेगा।" ;;
+                tunnel_key_exists)         fmt="Key पहले से %s पर मौजूद है — मौजूदा key का ही उपयोग होगा।" ;;
+                tunnel_gen_key)            fmt="नई tunnel key बनाई जा रही है..." ;;
+                tunnel_mk_d1)              fmt="D1 डेटाबेस '%s' बनाया जा रहा है..." ;;
+                tunnel_d1_exists)          fmt="D1 '%s' पहले से मौजूद है — बनाना छोड़ा गया।" ;;
+                tunnel_apply_schema)       fmt="schema.sql को D1 पर लागू किया जा रहा है..." ;;
+                tunnel_d1_noid)            fmt="D1 का database_id पढ़ने में विफल।" ;;
+                tunnel_wrangler_toml)      fmt="Project '%s' के लिए wrangler.toml बनाया गया।" ;;
+                tunnel_ensure_pages)       fmt="सुनिश्चित किया जा रहा है कि Pages project '%s' मौजूद है..." ;;
+                tunnel_pages_exists)       fmt="Pages project '%s' पहले से मौजूद है — जारी है।" ;;
+                tunnel_set_secret)         fmt="TUNNEL_KEY को Pages secret (production) के रूप में सेट किया जा रहा है..." ;;
+                tunnel_deploy)             fmt="Pages पर deploy हो रहा है..." ;;
+                tunnel_done)               fmt="हो गया! Tunnel URL: %s" ;;
+                router_pw_warn)            fmt="चेतावनी: %s गायब या खाली है — 9Router डिफ़ॉल्ट पासवर्ड के साथ चल रहा है। फ़ाइल बनाएं (chmod 600) फिर रीस्टार्ट करें।" ;;
+                router_pw_required_public) fmt="त्रुटि: %s गायब या खाली है लेकिन सार्वजनिक tunnel कॉन्फ़िगर है (.tunnel-url मौजूद है) — 9Router को डिफ़ॉल्ट dashboard पासवर्ड के साथ चलाने से इनकार। फ़ाइल बनाएं (chmod 600), या केवल स्थानीय उपयोग के लिए .tunnel-url हटा दें।" ;;
+                tunnel_apply_migrations)   fmt="Migration 001-004 क्रम से लागू हो रहे हैं (नए डेटाबेस पर हानिरहित)..." ;;
+                tunnel_apply_migration)    fmt="Migration %s लागू हो रहा है (schema_migrations में अभी दर्ज नहीं)..." ;;
+                tunnel_schema_incomplete)  fmt="Migration के बाद भी tunnel schema अधूरा है — सेटअप रद्द किया जा रहा है।" ;;
+                tunnel_gen_health_key)     fmt="Tunnel health key बनाई जा रही है..." ;;
+                tunnel_health_key_exists)  fmt="Health key पहले से मौजूद है: %s (बनाए रखा गया)" ;;
+                tunnel_gen_gate_pw)        fmt="Dashboard gate पासवर्ड बनाया जा रहा है..." ;;
+                tunnel_gen_dashboard_pw)   fmt="9Router dashboard पासवर्ड (.dashboard-pw) बनाया जा रहा है..." ;;
+                tunnel_gate_pw_file)       fmt="Gate पासवर्ड %s में सहेजा गया (chmod 600); Pages secret के रूप में GATE_PASSWORD + REQUIRE_GATE=1 सेट करें।" ;;
+                tunnel_gate_skipped)       fmt="चेतावनी: SETUP_NO_GATE=1 — dashboard gate सेट नहीं है; सार्वजनिक tunnel URL बिना पासवर्ड gate के dashboard दिखाएगा।" ;;
+                gw_no_pid)                 fmt="कोई gateway PID नहीं (%s)" ;;
+                gw_abort_multi)            fmt="रद्द: %s gateway PID उम्मीदवार, kill नहीं किया जा रहा (अस्पष्ट): %s" ;;
+                gw_kill_fail)              fmt="विफल: PID %s को kill नहीं किया जा सका" ;;
+                gw_dryrun)                 fmt="DRY_RUN: would run start-gateway.sh + verify Connected" ;;
+                gw_restart_ok)             fmt="RESTART OK: gateway फिर से चालू है + Telegram से Connected (%s)" ;;
+                gw_restart_fail)           fmt="RESTART विफल: 60 सेकंड में 'Connected to Telegram' नहीं मिला (%s)" ;;
+                gw_abort_ambiguous)        fmt="रद्द: %s gateway PID उम्मीदवार (अस्पष्ट), उन्हें छुआ नहीं गया: %s" ;;
+                tunnel_env_missing)        fmt="TUNNEL_BASE_URL सेट नहीं है। उदाहरण:" ;;
+                tunnel_env_example)        fmt="  TUNNEL_BASE_URL=https://<aapka-project>.pages.dev node tunnel-client.mjs" ;;
+                tunnel_env_alt)            fmt="  (या start-pages-tunnel.sh से चलाने पर URL को .tunnel-url फ़ाइल में सहेजें)" ;;
+                tunnel_key_unreadable)     fmt="Key फ़ाइल नहीं पढ़ी जा सकी: %s (इससे बनाएं: openssl rand -hex 32 > %s && chmod 600 %s)" ;;
+                tunnel_key_empty)          fmt="%s में key खाली है" ;;
+                tunnel_local_not_loopback) fmt="TUNNEL_LOCAL एक loopback URL होना चाहिए (मिला: %s)। TUNNEL_ALLOW_REMOTE_LOCAL=1 केवल तभी सेट करें जब आप सचमुच कहीं और forward करना चाहते हों।" ;;
+                tunnel_response_too_large) fmt="स्थानीय प्रतिक्रिया %s MB की सीमा से अधिक है" ;;
+                cf_usage)                  fmt="उपयोग: %s <tunnel-name> <hostname>" ;;
+                cf_installing)             fmt="cloudflared इंस्टॉल हो रहा है..." ;;
+                cf_have)                   fmt="cloudflared पहले से मौजूद है: %s" ;;
+                cf_install_fail)           fmt="cloudflared इंस्टॉल करने में विफल। मैन्युअल रूप से इंस्टॉल करें: https://github.com/cloudflare/cloudflared/releases" ;;
+                cf_unsupported_arch)       fmt="आर्किटेक्चर %s समर्थित नहीं है।" ;;
+                cf_need_login)             fmt="Cloudflare में लॉगिन नहीं है — 'cloudflared tunnel login' चलाया जा रहा है..." ;;
+                cf_login_fail)             fmt="Cloudflare लॉगिन विफल।" ;;
+                cf_bad_hostname)           fmt="अमान्य hostname: %s (उदाहरण: 9router.example.com)" ;;
+                cf_creating)               fmt="Tunnel '%s' बनाया जा रहा है..." ;;
+                cf_exists)                 fmt="Tunnel '%s' पहले से मौजूद है — उसी का उपयोग होगा (id %s)।" ;;
+                cf_created)                fmt="Tunnel बनाया गया: %s (id %s)" ;;
+                cf_no_id)                  fmt="Tunnel ID निर्धारित करने में विफल।" ;;
+                cf_no_cred)                fmt="Credentials फ़ाइल नहीं मिली: %s" ;;
+                cf_writing_config)         fmt="Config %s में लिखा जा रहा है..." ;;
+                cf_routing_dns)            fmt="DNS CNAME %s -> %s.cfargotunnel.com बनाया जा रहा है..." ;;
+                cf_dns_exists)             fmt="DNS route विफल — रिकॉर्ड पहले से मौजूद हो सकता है। ज़रूरत हो तो CNAME मैन्युअल रूप से बनाएं।" ;;
+                cf_9router_warn)           fmt="9Router 127.0.0.1:20128 पर जवाब नहीं दे रहा — tunnel का उपयोग करने से पहले सुनिश्चित करें कि वह चल रहा है।" ;;
+                cf_done)                   fmt="हो गया! सार्वजनिक dashboard: https://%s" ;;
             esac
             ;;
         *)

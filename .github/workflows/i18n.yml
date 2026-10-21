@@ -1,7 +1,7 @@
 name: i18n
 
-# CI: every i18n key used via t() must be translated in all 3 languages
-# (en/id/ms) — see scripts/check-i18n.sh. Fails the build on any gap.
+# CI: every i18n key used via t() must be translated in all 5 languages
+# (en/id/ms/vi/hi) — see scripts/check-i18n.sh. Fails the build on any gap.
 on:
   push:
     branches: [main]
@@ -12,5 +12,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check i18n key sync (en/id/ms)
+      - name: Check i18n key sync (en/id/ms/vi/hi)
         run: bash scripts/check-i18n.sh

@@ -1,10 +1,11 @@
 #!/bin/bash
 # check-i18n.sh — CI check: every i18n key used in this repo must be
-# translated in ALL three languages (en, id, ms).
+# translated in ALL five languages (en, id, ms, vi, hi).
 #
-# Definitions come from lib/i18n.sh (bash `case` branches: en) / ms) / *)
-# where the *) branch is Indonesian, the default) and from lib/i18n.mjs
-# (the STRINGS = { en: {...}, ms: {...}, id: {...} } object).
+# Definitions come from lib/i18n.sh (bash `case` branches: en) / ms) /
+# vi) / hi) / *) where the *) branch is Indonesian, the default) and
+# from lib/i18n.mjs (the STRINGS = { en: {...}, ms: {...}, id: {...},
+# vi: {...}, hi: {...} } object).
 # Usage is scanned statically: `t <keyname>` in *.sh, `t("<keyname>")` in *.mjs
 # (there is no dynamic key usage in this repo — verified 2026-10-12).
 #
@@ -16,13 +17,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-LANGS="en id ms"
+LANGS="en id ms vi hi"
 
 # --- keys defined per language in lib/i18n.sh ---
-def_sh() { # $1 = en|id|ms
+def_sh() { # $1 = en|id|ms|vi|hi
   awk -v lang="$1" '
     /^[[:space:]]*en\)[[:space:]]*$/ { cur="en"; next }
     /^[[:space:]]*ms\)[[:space:]]*$/ { cur="ms"; next }
+    /^[[:space:]]*vi\)[[:space:]]*$/ { cur="vi"; next }
+    /^[[:space:]]*hi\)[[:space:]]*$/ { cur="hi"; next }
     /^[[:space:]]*\*\)[[:space:]]*$/ { cur="id"; next }
     cur==lang && /^[[:space:]]*[a-z][a-z_0-9]*\)[[:space:]]*fmt=/ {
       line=$0
@@ -35,7 +38,7 @@ def_sh() { # $1 = en|id|ms
 
 # --- keys defined per language in lib/i18n.mjs ---
 # Handles both the repo's multi-line style and single-line blocks.
-def_mjs() { # $1 = en|id|ms
+def_mjs() { # $1 = en|id|ms|vi|hi
   awk -v lang="$1" '
     function emit_inline(s,   n, parts, i, k, rest) {
       n = split(s, parts, ",")
@@ -47,7 +50,7 @@ def_mjs() { # $1 = en|id|ms
         }
       }
     }
-    /^[[:space:]]*(en|ms|id)[[:space:]]*:[[:space:]]*\{/ {
+    /^[[:space:]]*(en|ms|id|vi|hi)[[:space:]]*:[[:space:]]*\{/ {
       line = $0
       sub(/^[[:space:]]*/, "", line)
       sub(/[[:space:]]*:.*$/, "", line)

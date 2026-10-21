@@ -2,7 +2,7 @@
 
 ![Hermuse banner](assets/banner.png)
 
-[🇬🇧 English](README.md) · [🇮🇩 Indonesia](README.id.md) · 🇲🇾 **Malaysia**
+[🇬🇧 English](README.md) · [🇮🇩 Indonesia](README.id.md) · 🇲🇾 **Malaysia** · [🇻🇳 Việt Nam](README.vi.md) · [🇮🇳 हिन्दी](README.hi.md)
 
 [![Stars](https://img.shields.io/github/stars/imkofty/Hermuse?style=for-the-badge&logo=github&color=20808D)](https://github.com/imkofty/Hermuse/stargazers)
 [![Forks](https://img.shields.io/github/forks/imkofty/Hermuse?style=for-the-badge&logo=github&color=4DD0E1)](https://github.com/imkofty/Hermuse/network/members)

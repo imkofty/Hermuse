@@ -153,4 +153,4 @@ grep -n "gateway_pids" scripts/doctor.sh   # see the pattern doctor uses
 
 ---
 
-*Versi Bahasa Indonesia: [troubleshooting.id.md](troubleshooting.id.md) · Versi Bahasa Malaysia: [troubleshooting.ms.md](troubleshooting.ms.md)*
+*Versi Bahasa Indonesia: [troubleshooting.id.md](troubleshooting.id.md) · Versi Bahasa Malaysia: [troubleshooting.ms.md](troubleshooting.ms.md) · Tiếng Việt: [troubleshooting.vi.md](troubleshooting.vi.md) · हिन्दी: [troubleshooting.hi.md](troubleshooting.hi.md)*

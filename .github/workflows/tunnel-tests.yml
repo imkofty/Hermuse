@@ -36,3 +36,5 @@ jobs:
           for f in *.sh scripts/*.sh lib/*.sh; do bash -n "$f"; done
       - name: i18n completeness check
         run: bash scripts/check-i18n.sh
+      - name: i18n checker negative test (per-runtime validation)
+        run: bash tests/i18n-check.test.sh

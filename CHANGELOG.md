@@ -9,6 +9,12 @@ Semua perubahan penting di repo ini dicatat di sini, format ala Keep a Changelog
 
 ## [Unreleased]
 
+### i18n: Japanese (ja) — six languages (2026-10-23)
+- **One new language on every multilingual surface**: `lib/i18n.sh` (75 keys per language) and `lib/i18n.mjs` (8 tunnel-client keys) now carry Japanese (`ja`) alongside en/id/ms/vi/hi. Select with `HERMUSE_LANG=ja`; unknown values still fall back to Indonesian, and the default is unchanged.
+- Style follows the Microsoft Japanese Localization Style Guide and the JTF Style Guide for Translators: です・ます (desu/masu) polite style throughout, 「…してください」 for user actions, 「～できません」 for "cannot …", katakana loanwords with the long-vowel mark (サーバー, ユーザー), product names / commands / paths stay English.
+- `scripts/check-i18n.sh` extended from 5 to 6 languages (`LANGS` plus the awk branch/object patterns) — the per-runtime check now verifies ja in both runtimes separately; the negative-path tests pass unchanged; the CI workflow comments updated to match.
+- New full translations: `README.ja.md`, `docs/key-rotation.ja.md`, `docs/troubleshooting.ja.md`. The language switcher line in every README variant and the version-pointer line in every key-rotation/troubleshooting variant now list all six languages consistently.
+
 ### i18n: Vietnamese (vi) + Hindi (hi) — five languages (2026-10-21)
 - **Two new languages on every multilingual surface**: `lib/i18n.sh` and `lib/i18n.mjs` now carry all 76 keys in Vietnamese (`vi`, register "bạn") and Hindi (`hi`, register "आप", Devanagari) alongside en/id/ms. Select with `HERMUSE_LANG=vi` or `HERMUSE_LANG=hi`; unknown values still fall back to Indonesian, and the default is unchanged.
 - `scripts/check-i18n.sh` extended from 3 to 5 languages (`LANGS` plus the awk branch/object patterns) — the check now reports 76 keys defined in all five languages; the CI workflow comments updated to match.

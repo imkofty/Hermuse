@@ -5,7 +5,7 @@ ter-commit ke repo, terlihat di layar), seseorang yang punya akses seharusnya
 sudah tidak punya, atau sekadar terjadwal. Rotasi itu murah — lakukan saja
 daripada diperdebatkan.
 
-*English version: [key-rotation.md](key-rotation.md) · Versi Bahasa Malaysia: [key-rotation.ms.md](key-rotation.ms.md) · Tiếng Việt: [key-rotation.vi.md](key-rotation.vi.md) · हिन्दी: [key-rotation.hi.md](key-rotation.hi.md)*
+*English version: [key-rotation.md](key-rotation.md) · Versi Bahasa Malaysia: [key-rotation.ms.md](key-rotation.ms.md) · Tiếng Việt: [key-rotation.vi.md](key-rotation.vi.md) · हिन्दी: [key-rotation.hi.md](key-rotation.hi.md) · 日本語: [key-rotation.ja.md](key-rotation.ja.md)*
 
 ## Daftar secret-nya
 

@@ -5,7 +5,7 @@ commit हो गया, स्क्रीन पर दिख गया), क�
 होनी चाहिए, या बस एक निर्धारित समय पर। Rotation सस्ता है — बहस करने के
 बजाय कर डालें।
 
-*English version: [key-rotation.md](key-rotation.md) · Versi Bahasa Indonesia: [key-rotation.id.md](key-rotation.id.md) · Versi Bahasa Malaysia: [key-rotation.ms.md](key-rotation.ms.md) · Tiếng Việt: [key-rotation.vi.md](key-rotation.vi.md)*
+*English version: [key-rotation.md](key-rotation.md) · Versi Bahasa Indonesia: [key-rotation.id.md](key-rotation.id.md) · Versi Bahasa Malaysia: [key-rotation.ms.md](key-rotation.ms.md) · Tiếng Việt: [key-rotation.vi.md](key-rotation.vi.md) · 日本語: [key-rotation.ja.md](key-rotation.ja.md)*
 
 ## Secrets क्या हैं
 

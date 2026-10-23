@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hermuse i18n helper — user-facing strings in 5 languages.
+# Hermuse i18n helper — user-facing strings in 6 languages.
 #
 # Usage in a script (repo root assumed via SCRIPT_DIR):
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,19 +10,23 @@
 #   log "$(t install_have_node "$(node --version)")"
 #
 # Language: ${HERMUSE_LANG:-id} — one of: id (default, legacy behaviour),
-# en, ms, vi, hi. Unknown values fall back to id.
+# en, ms, vi, hi, ja. Unknown values fall back to id.
 #
 # NOTE for translators: keep product names, commands and paths in English.
 # Malay follows the repo's ms style guide: "anda", no Manglish particles,
 # technical nouns (gateway, deploy, stack, folder, terminal, bot, secret)
 # stay English. NEVER use these in ms strings: butuh (vulgar!), bisa
 # (=racun), gampang, sulit, kamu/kalian, nggak.
+# Japanese follows the Microsoft/JTF style guides: desu/masu (polite)
+# style for message bodies, "...shite kudasai" for user actions,
+# "~dekimasen" for "cannot ...", katakana loanwords with the long-vowel
+# mark (server -> sābā), and full-width punctuation.
 
 t() {
     local key="$1"; shift || true
     local lang="${HERMUSE_LANG:-id}"
     case "$lang" in
-        en|ms|vi|hi) ;;
+        en|ms|vi|hi|ja) ;;
         *) lang="id" ;;
     esac
     local fmt=""
@@ -341,6 +345,85 @@ t() {
                 cf_dns_exists)             fmt="DNS route विफल — रिकॉर्ड पहले से मौजूद हो सकता है। ज़रूरत हो तो CNAME मैन्युअल रूप से बनाएं।" ;;
                 cf_9router_warn)           fmt="9Router 127.0.0.1:20128 पर जवाब नहीं दे रहा — tunnel का उपयोग करने से पहले सुनिश्चित करें कि वह चल रहा है।" ;;
                 cf_done)                   fmt="हो गया! सार्वजनिक dashboard: https://%s" ;;
+            esac
+            ;;
+        ja)
+            case "$key" in
+                install_debian_only) fmt="このスクリプトは Debian/Ubuntu 用です（apt-get が必要です）。他のディストリビューションでは手動でインストールしてください。" ;;
+                install_need_sudo) fmt="'sudo' コマンドが必要です。または root としてこのスクリプトを実行してください。" ;;
+                install_sudo_pw) fmt="sudo がパスワードを求めていますが、このスクリプトは非対話型で動作するよう設計されています。" ;;
+                install_enable_sudo) fmt="このユーザーにパスワードなし sudo を有効にするか、root として実行してください。" ;;
+                install_deps) fmt="基本依存パッケージ（git、curl、tar）をインストールしています..." ;;
+                install_node) fmt="NodeSource 経由で Node.js LTS をインストールしています..." ;;
+                install_have_node) fmt="Node.js はすでにインストールされています: %s" ;;
+                install_hermes) fmt="Hermes Agent をインストールしています..." ;;
+                install_have_hermes) fmt="Hermes はすでにインストールされています: %s" ;;
+                install_version_ok) fmt="%s のバージョンを確認しました: %s" ;;
+                install_align_version) fmt="%s はバージョン %s でインストールされていますが、このインストーラーは %s に固定しています — 合わせて再インストールしています..." ;;
+                install_pkg_fresh) fmt="%s %s をインストールしています..." ;;
+                install_version_bad) fmt="エラー: インストール後の %s のバージョンは %s ですが、想定は %s です — 中止します。" ;;
+                install_verify) fmt="Hermes のインストールを検証しています..." ;;
+                install_doctor_ok) fmt="hermes doctor: OK" ;;
+                install_doctor_warn) fmt="hermes doctor で問題が見つかりました — 上の出力を確認してください。" ;;
+                tunnel_usage) fmt="使い方: %s <pages-project-name> <d1-name>" ;;
+                tunnel_need_wrangler) fmt="wrangler がインストールされていません（npm i -g wrangler）。" ;;
+                tunnel_need_node) fmt="node がインストールされていません。" ;;
+                tunnel_no_token) fmt="CLOUDFLARE_API_TOKEN が設定されていません。必要に応じて wrangler がブラウザーログインを使用します。" ;;
+                tunnel_key_exists) fmt="キーはすでに %s に存在します — 既存のものを再利用します。" ;;
+                tunnel_gen_key) fmt="新しい tunnel キーを生成しています..." ;;
+                tunnel_mk_d1) fmt="D1 データベース '%s' を作成しています..." ;;
+                tunnel_d1_exists) fmt="D1 '%s' はすでに存在します — 作成をスキップします。" ;;
+                tunnel_apply_schema) fmt="schema.sql を D1 に適用しています..." ;;
+                tunnel_d1_noid) fmt="D1 の database_id を読み取れませんでした。" ;;
+                tunnel_wrangler_toml) fmt="プロジェクト '%s' の wrangler.toml を作成しました。" ;;
+                tunnel_ensure_pages) fmt="Pages プロジェクト '%s' が存在することを確認しています..." ;;
+                tunnel_pages_exists) fmt="Pages プロジェクト '%s' はすでに存在します — 続行します。" ;;
+                tunnel_set_secret) fmt="TUNNEL_KEY を Pages のシークレットとして設定しています（production）..." ;;
+                tunnel_deploy) fmt="Pages へデプロイしています..." ;;
+                tunnel_done) fmt="完了しました！Tunnel URL: %s" ;;
+                router_pw_warn) fmt="警告: %s が存在しないか空です — 9Router はデフォルトパスワードで動作します。ファイルを作成し（chmod 600）、再起動してください。" ;;
+                router_pw_required_public) fmt="エラー: %s が存在しないか空ですが、公開 tunnel が設定されています（.tunnel-url が存在します）— デフォルトのダッシュボードパスワードで 9Router を実行することは拒否します。ファイルを作成するか（chmod 600）、ローカル専用にする場合は .tunnel-url を削除してください。" ;;
+                tunnel_apply_migrations) fmt="マイグレーション 001-004 を順番に適用しています（新規データベースでも無害です）..." ;;
+                tunnel_apply_migration) fmt="マイグレーション %s を適用しています（schema_migrations に未記録）..." ;;
+                tunnel_schema_incomplete) fmt="マイグレーション後も tunnel スキーマが不完全です — セットアップを中止します。" ;;
+                tunnel_gen_health_key) fmt="tunnel ヘルスキーを生成しています..." ;;
+                tunnel_health_key_exists) fmt="ヘルスキーはすでに存在します: %s（保持します）" ;;
+                tunnel_gen_gate_pw) fmt="ダッシュボード用ゲートパスワードを生成しています..." ;;
+                tunnel_gen_dashboard_pw) fmt="9Router ダッシュボードパスワード（.dashboard-pw）を生成しています..." ;;
+                tunnel_gate_pw_file) fmt="ゲートパスワードを %s に保存しました（chmod 600）。Pages シークレット GATE_PASSWORD と REQUIRE_GATE=1 を設定してください。" ;;
+                tunnel_gate_skipped) fmt="警告: SETUP_NO_GATE=1 — ダッシュボードゲートは設定されていません。公開 tunnel URL はパスワードゲートなしでダッシュボードを提供します。" ;;
+                gw_no_pid) fmt="ゲートウェイの PID がありません（%s）" ;;
+                gw_abort_multi) fmt="中止: ゲートウェイ PID 候補が %s 件あります。曖昧なため kill しません: %s" ;;
+                gw_kill_fail) fmt="失敗: PID %s を kill できませんでした" ;;
+                gw_dryrun) fmt="DRY_RUN: start-gateway.sh を実行し、Connected を確認します" ;;
+                gw_restart_ok) fmt="再起動 OK: ゲートウェイは復旧し、Telegram に接続しました（%s）" ;;
+                gw_restart_fail) fmt="再起動失敗: 60 秒以内に 'Connected to Telegram' が確認できませんでした（%s）" ;;
+                gw_abort_ambiguous) fmt="中止: ゲートウェイ PID 候補が %s 件あります（曖昧）。手を付けていません: %s" ;;
+                tunnel_env_missing) fmt="TUNNEL_BASE_URL が設定されていません。例:" ;;
+                tunnel_env_example) fmt="  TUNNEL_BASE_URL=https://<あなたのプロジェクト>.pages.dev node tunnel-client.mjs" ;;
+                tunnel_env_alt) fmt="  （または start-pages-tunnel.sh 経由で実行する場合は、URL を .tunnel-url ファイルに保存してください）" ;;
+                tunnel_key_unreadable) fmt="キーファイルを読み取れません: %s（作成方法: openssl rand -hex 32 > %s && chmod 600 %s）" ;;
+                tunnel_key_empty) fmt="%s のキーが空です" ;;
+                tunnel_local_not_loopback) fmt="TUNNEL_LOCAL は loopback URL でなければなりません（取得値: %s）。本当に別の場所へ転送する場合のみ TUNNEL_ALLOW_REMOTE_LOCAL=1 を設定してください。" ;;
+                tunnel_response_too_large) fmt="ローカルレスポンスが上限 %s MB を超えています" ;;
+                cf_usage) fmt="使い方: %s <tunnel-name> <hostname>" ;;
+                cf_installing) fmt="cloudflared をインストールしています..." ;;
+                cf_have) fmt="cloudflared はすでにインストールされています: %s" ;;
+                cf_install_fail) fmt="cloudflared のインストールに失敗しました。手動でインストールしてください: https://github.com/cloudflare/cloudflared/releases" ;;
+                cf_unsupported_arch) fmt="アーキテクチャ %s はサポートされていません。" ;;
+                cf_need_login) fmt="Cloudflare にログインしていません — 'cloudflared tunnel login' を実行しています..." ;;
+                cf_login_fail) fmt="Cloudflare へのログインに失敗しました。" ;;
+                cf_bad_hostname) fmt="無効なホスト名です: %s（例: 9router.example.com）" ;;
+                cf_creating) fmt="tunnel '%s' を作成しています..." ;;
+                cf_exists) fmt="Tunnel '%s' はすでに存在します — 再利用します（id %s）。" ;;
+                cf_created) fmt="Tunnel を作成しました: %s（id %s）" ;;
+                cf_no_id) fmt="tunnel ID を特定できませんでした。" ;;
+                cf_no_cred) fmt="認証情報ファイルが見つかりません: %s" ;;
+                cf_writing_config) fmt="設定を %s に書き込んでいます..." ;;
+                cf_routing_dns) fmt="DNS CNAME %s -> %s.cfargotunnel.com を作成しています..." ;;
+                cf_dns_exists) fmt="DNS ルートの作成に失敗しました — レコードがすでに存在する可能性があります。必要に応じて CNAME を手動で作成してください。" ;;
+                cf_9router_warn) fmt="9Router が 127.0.0.1:20128 で応答していません — tunnel を使う前に起動していることを確認してください。" ;;
+                cf_done) fmt="完了しました！公開ダッシュボード: https://%s" ;;
             esac
             ;;
         *)

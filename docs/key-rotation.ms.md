@@ -5,7 +5,7 @@ ter-commit ke repo, terlihat pada skrin), seseorang yang mempunyai akses
 sepatutnya sudah tiada, atau sekadar berjadual. Putaran itu murah — lakukannya
 sahaja daripada diperdebatkan.
 
-*English version: [key-rotation.md](key-rotation.md) · Versi Bahasa Indonesia: [key-rotation.id.md](key-rotation.id.md) · Tiếng Việt: [key-rotation.vi.md](key-rotation.vi.md) · हिन्दी: [key-rotation.hi.md](key-rotation.hi.md)*
+*English version: [key-rotation.md](key-rotation.md) · Versi Bahasa Indonesia: [key-rotation.id.md](key-rotation.id.md) · Tiếng Việt: [key-rotation.vi.md](key-rotation.vi.md) · हिन्दी: [key-rotation.hi.md](key-rotation.hi.md) · 日本語: [key-rotation.ja.md](key-rotation.ja.md)*
 
 ## Senarai secret
 

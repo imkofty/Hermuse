@@ -1,11 +1,11 @@
 #!/bin/bash
 # check-i18n.sh — CI check: every i18n key used in this repo must be
-# translated in ALL five languages (en, id, ms, vi, hi), validated
+# translated in ALL six languages (en, id, ms, vi, hi, ja), validated
 # SEPARATELY per runtime:
 #
 #   - Bash runtime: keys used via the bash helper in *.sh must be
 #     defined in lib/i18n.sh for every language (bash `case` branches:
-#     en) / ms) / vi) / hi) / *) where the *) branch is Indonesian,
+#     en) / ms) / vi) / hi) / ja) / *) where the *) branch is Indonesian,
 #     the default).
 #   - JS runtime: keys used via the JS helper in *.mjs must be defined
 #     in lib/i18n.mjs for every language (the STRINGS object).
@@ -30,7 +30,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-LANGS="en id ms vi hi"
+LANGS="en id ms vi hi ja"
 
 # --- values per language in lib/i18n.sh ---
 # Prints one line per definition: key <TAB> %s-count <TAB> empty(0|1)
@@ -40,6 +40,7 @@ vals_sh() { # $1 = en|id|ms|vi|hi
     /^[[:space:]]*ms\)[[:space:]]*$/ { cur="ms"; next }
     /^[[:space:]]*vi\)[[:space:]]*$/ { cur="vi"; next }
     /^[[:space:]]*hi\)[[:space:]]*$/ { cur="hi"; next }
+    /^[[:space:]]*ja\)[[:space:]]*$/ { cur="ja"; next }
     /^[[:space:]]*\*\)[[:space:]]*$/ { cur="id"; next }
     cur==lang && /^[[:space:]]*[a-z][a-z_0-9]*\)[[:space:]]*fmt=/ {
       line = $0
@@ -68,7 +69,7 @@ vals_mjs() { # $1 = en|id|ms|vi|hi
         print k "\t" n "\t" (v == "" ? 1 : 0)
       }
     }
-    /^[[:space:]]*(en|ms|id|vi|hi)[[:space:]]*:[[:space:]]*\{/ {
+    /^[[:space:]]*(en|ms|id|vi|hi|ja)[[:space:]]*:[[:space:]]*\{/ {
       line = $0
       sub(/^[[:space:]]*/, "", line)
       sub(/[[:space:]]*:.*$/, "", line)

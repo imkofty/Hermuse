@@ -5,7 +5,7 @@ vào repo, bị nhìn thấy trên màn hình), một người từng có quyề
 nên còn giữ nó nữa, hoặc đơn giản là theo lịch. Xoay vòng rất rẻ — hãy làm
 luôn thay vì tranh luận.
 
-*English version: [key-rotation.md](key-rotation.md) · Versi Bahasa Indonesia: [key-rotation.id.md](key-rotation.id.md) · Versi Bahasa Malaysia: [key-rotation.ms.md](key-rotation.ms.md) · हिन्दी: [key-rotation.hi.md](key-rotation.hi.md)*
+*English version: [key-rotation.md](key-rotation.md) · Versi Bahasa Indonesia: [key-rotation.id.md](key-rotation.id.md) · Versi Bahasa Malaysia: [key-rotation.ms.md](key-rotation.ms.md) · हिन्दी: [key-rotation.hi.md](key-rotation.hi.md) · 日本語: [key-rotation.ja.md](key-rotation.ja.md)*
 
 ## Các secret là gì
 

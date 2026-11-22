@@ -115,6 +115,38 @@ else
   warn "$(t install_doctor_warn)"
 fi
 
+# --- 7. Auto-start (cron) ---
+# Pasang watchdog 5-menit + start-all saat reboot, supaya ketiga komponen
+# (9Router, tunnel, gateway) nyala lagi sendiri habis VM mati — tanpa
+# langkah manual. Idempotent: baris yang sudah ada tidak diduplikasi,
+# jadi installer aman dijalankan ulang. Tidak menyalakan apa pun sekarang:
+# komponen baru jalan setelah gateway + tunnel dikonfigurasi (langkah
+# manual di bawah); cron + watchdog yang akan menyalakannya.
+# Kalau `crontab` tidak ada di mesin ini, lewati dengan peringatan
+# (installer tetap sukses; pasang cron lalu tambah barisnya manual
+# sesuai README.md).
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+install_cron_line() { # $1 = baris cron
+  local line="$1" tmp=""
+  tmp="$(mktemp)"
+  crontab -l 2>/dev/null > "$tmp" || true
+  if grep -Fxq "$line" "$tmp"; then
+    rm -f "$tmp"
+    return 0
+  fi
+  { cat "$tmp"; printf '%s\n' "$line"; } | crontab -
+  rm -f "$tmp"
+}
+if command -v crontab >/dev/null 2>&1; then
+  log "$(t install_autostart)"
+  install_cron_line "*/5 * * * * $ROOT_DIR/watchdog.sh"
+  install_cron_line "*/5 * * * * $ROOT_DIR/gateway-watch.sh"
+  install_cron_line "@reboot sleep 30 && $ROOT_DIR/scripts/start-all.sh >> $ROOT_DIR/boot.log 2>&1"
+  log "$(t install_autostart_ok)"
+else
+  warn "$(t install_autostart_nocron)"
+fi
+
 cat << 'EOF'
 
 ============================================================

@@ -49,6 +49,9 @@ t() {
                 install_verify)      fmt="Verifying the Hermes installation..." ;;
                 install_doctor_ok)   fmt="hermes doctor: OK" ;;
                 install_doctor_warn) fmt="hermes doctor found issues — see the output above." ;;
+                install_autostart) fmt="Installing auto-start (cron: watchdog every 5 minutes + start-all on reboot)..." ;;
+                install_autostart_ok) fmt="Auto-start installed: watchdog every 5 minutes, start-all on reboot." ;;
+                install_autostart_nocron) fmt="crontab not found — auto-start was NOT installed. Install cron, then add the watchdog and @reboot lines from README.md manually." ;;
                 tunnel_usage)        fmt="Usage: %s <pages-project-name> <d1-name>" ;;
                 tunnel_need_wrangler) fmt="wrangler is not installed (npm i -g wrangler)." ;;
                 tunnel_need_node)    fmt="node is not installed." ;;
@@ -128,6 +131,9 @@ t() {
                 install_verify)      fmt="Mengesahkan pemasangan Hermes..." ;;
                 install_doctor_ok)   fmt="hermes doctor: OK" ;;
                 install_doctor_warn) fmt="hermes doctor menemui masalah — lihat output di atas." ;;
+                install_autostart) fmt="Memasang auto-start (cron: watchdog setiap 5 minit + start-all semasa reboot)..." ;;
+                install_autostart_ok) fmt="Auto-start dipasang: watchdog setiap 5 minit, start-all semasa reboot." ;;
+                install_autostart_nocron) fmt="crontab tidak dijumpai — auto-start TIDAK dipasang. Pasang cron dahulu, kemudian tambah baris watchdog dan @reboot dari README.md secara manual." ;;
                 tunnel_usage)        fmt="Penggunaan: %s <nama-projek-pages> <nama-d1>" ;;
                 tunnel_need_wrangler) fmt="wrangler belum dipasang (npm i -g wrangler)." ;;
                 tunnel_need_node)    fmt="node belum dipasang." ;;
@@ -207,6 +213,9 @@ t() {
                 install_verify)            fmt="Đang xác minh bản cài đặt Hermes..." ;;
                 install_doctor_ok)         fmt="hermes doctor: OK" ;;
                 install_doctor_warn)       fmt="hermes doctor phát hiện vấn đề — xem kết quả ở trên." ;;
+                install_autostart)         fmt="Đang cài đặt auto-start (cron: watchdog mỗi 5 phút + start-all khi khởi động lại)..." ;;
+                install_autostart_ok)      fmt="Đã cài đặt auto-start: watchdog mỗi 5 phút, start-all khi khởi động lại." ;;
+                install_autostart_nocron)  fmt="Không tìm thấy crontab — auto-start KHÔNG được cài đặt. Hãy cài đặt cron, sau đó tự thêm các dòng watchdog và @reboot từ README.md." ;;
                 tunnel_usage)              fmt="Cách dùng: %s <pages-project-name> <d1-name>" ;;
                 tunnel_need_wrangler)      fmt="wrangler chưa được cài đặt (npm i -g wrangler)." ;;
                 tunnel_need_node)          fmt="node chưa được cài đặt." ;;
@@ -286,6 +295,9 @@ t() {
                 install_verify)            fmt="Hermes इंस्टॉलेशन सत्यापित हो रहा है..." ;;
                 install_doctor_ok)         fmt="hermes doctor: OK" ;;
                 install_doctor_warn)       fmt="hermes doctor को समस्याएं मिलीं — ऊपर दिया आउटपुट देखें।" ;;
+                install_autostart)         fmt="ऑटो-स्टार्ट इंस्टॉल किया जा रहा है (cron: हर 5 मिनट में watchdog + रीबूट पर start-all)..." ;;
+                install_autostart_ok)      fmt="ऑटो-स्टार्ट इंस्टॉल हो गया: हर 5 मिनट में watchdog, रीबूट पर start-all।" ;;
+                install_autostart_nocron)  fmt="crontab नहीं मिला — ऑटो-स्टार्ट इंस्टॉल नहीं हुआ। cron इंस्टॉल करें, फिर README.md से watchdog और @reboot लाइनें मैन्युअल रूप से जोड़ें।" ;;
                 tunnel_usage)              fmt="उपयोग: %s <pages-project-name> <d1-name>" ;;
                 tunnel_need_wrangler)      fmt="wrangler इंस्टॉल नहीं है (npm i -g wrangler)।" ;;
                 tunnel_need_node)          fmt="node इंस्टॉल नहीं है।" ;;
@@ -365,6 +377,9 @@ t() {
                 install_verify) fmt="Hermes のインストールを検証しています..." ;;
                 install_doctor_ok) fmt="hermes doctor: OK" ;;
                 install_doctor_warn) fmt="hermes doctor で問題が見つかりました — 上の出力を確認してください。" ;;
+                install_autostart) fmt="自動起動をインストール中 (cron: 5分ごとのwatchdog + 再起動時のstart-all)..." ;;
+                install_autostart_ok) fmt="自動起動をインストールしました: 5分ごとのwatchdog、再起動時のstart-all。" ;;
+                install_autostart_nocron) fmt="crontabが見つかりません — 自動起動はインストールされませんでした。cronをインストールしてから、README.mdのwatchdogと@rebootの行を手動で追加してください。" ;;
                 tunnel_usage) fmt="使い方: %s <pages-project-name> <d1-name>" ;;
                 tunnel_need_wrangler) fmt="wrangler がインストールされていません（npm i -g wrangler）。" ;;
                 tunnel_need_node) fmt="node がインストールされていません。" ;;
@@ -444,6 +459,9 @@ t() {
                 install_verify)      fmt="Verifikasi instalasi Hermes..." ;;
                 install_doctor_ok)   fmt="hermes doctor: OK" ;;
                 install_doctor_warn) fmt="hermes doctor menemukan masalah — lihat output di atas." ;;
+                install_autostart) fmt="Memasang auto-start (cron: watchdog tiap 5 menit + start-all saat reboot)..." ;;
+                install_autostart_ok) fmt="Auto-start terpasang: watchdog tiap 5 menit, start-all saat reboot." ;;
+                install_autostart_nocron) fmt="crontab tidak ditemukan — auto-start TIDAK terpasang. Pasang cron dulu, lalu tambahkan baris watchdog dan @reboot dari README.md secara manual." ;;
                 tunnel_usage)        fmt="Pakai: %s <nama-pages-project> <nama-d1>" ;;
                 tunnel_need_wrangler) fmt="wrangler belum terinstall (npm i -g wrangler)." ;;
                 tunnel_need_node)    fmt="node belum terinstall." ;;

@@ -124,6 +124,9 @@ the tunnel client isn't running yet.
 
 ## Watchdog (cron every 5 minutes)
 
+`scripts/install.sh` installs this automatically (along with the
+`@reboot` entry below). The manual step is only needed if you skipped it:
+
 ```bash
 crontab -e
 # add this line (adjust the path):
@@ -163,6 +166,11 @@ crontab -e
 ```
 
 ## Auto-start after reboot
+
+`scripts/install.sh` installs this automatically: cron `@reboot` for
+`start-all.sh` plus the 5-minute watchdog cron (and `gateway-watch.sh`).
+The manual options below are only needed if you skipped that step or
+prefer systemd.
 
 `scripts/start-all.sh` starts any Hermuse component that is down (9Router,
 tunnel client, Telegram gateway) — idempotent, running components are untouched:
